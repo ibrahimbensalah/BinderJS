@@ -1,57 +1,58 @@
 # xania-templating
 
 export class Binding {
-    children: Binding[] = [];
+    public children: Binding[] = [];
 
-    constructor(public path: string[]) {
-    }
-
-    joinChild(childPath: string[]) {
-        this.children.push(new Binding(childPath));
-    }
-
-    join(otherPath: string[]): boolean {
-        var commonPath = this.getCommonPath(otherPath);
-        if (commonPath != null && !commonPath.length)
-            return false;
-
-        if (commonPath.length == this.path.length) {
-            var childPath = otherPath.slice(commonPath.length);
-            joinChild(childPath);
-        } else if (commonPath.length == other.path.length) {
-            this.path = this.path.slice(commonPath.length);
-            other.children.push(this);
-        } else {
-            this.path = this.path.slice(commonPath.length);
-            other.path = other.path.slice(commonPath.length);
-            var parent = new Binding(commonPath);
-            parent.children.push(this, other);
-        }
-        return true;
+    constructor(public property: string) {
     }
 
     toString() {
-        var s = this.path.join(".");
-        for (var i in this.children) {
-            s += "[" + this.children[i].toString() + "]\n";
-        }
-        return s;
-    }
+        if (this.children.length == 0)
+            return this.property;
 
-    getCommonPath(otherPath: string[]): string[] {
-        return null;
+        var s = this.property + "[";
+        for (var i in this.children) {
+            s += "-" + this.children[i].toString();
+        }
+        return s + "]";
     }
 }
 
 export class Binder {
     bindings: Binding[] = [];
 
-    addBinding(path: string) {
-        var b = new Binding(path.split('.'));
-        for (var i in this.bindings) {
-            var x = this.bindings[i].join(b);
+    addBinding(expression: string) {
+        this.merge([this.parseBinding(expression)], this.bindings);
+    }
+
+    merge(list1: Binding[], list2: Binding[]) {
+        for (var i = 0; i < list1.length; i++) {
+            var x = list1[i];
+            this.mergeOne(x, list2);
         }
-        this.bindings.push(b);
+    }
+
+    mergeOne(x: Binding, list2: Binding[]) {
+        for (var j = 0; j < list2.length; j++) {
+            if (x.property === list2[j].property) {
+                this.merge(x.children, list2[j].children);
+                return;
+            }
+        }
+        list2.push(x);
+    }
+
+    parseBinding(expression: string): Binding {
+        var path = expression.split(".");
+        var child: Binding = null;
+        for (var i = path.length - 1; i >= 0; i--) {
+            var parent = new Binding(path[i]);
+            if (!!child) {
+                parent.children.push(child);
+            }
+            child = parent;
+        }
+        return child;
     }
 
     toString() {
@@ -63,9 +64,10 @@ export class Binder {
     }
 }
 
-
 var binder = new Binder();
 binder.addBinding("a.b");
 binder.addBinding("a.b.c");
+binder.addBinding("a.b.d");
+binder.addBinding("a.g.h.b");
 
-console.log(binder.toString())
+console.log(binder.toString());
