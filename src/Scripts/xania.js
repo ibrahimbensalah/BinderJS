@@ -9,9 +9,10 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         function DomElement(dom, template) {
             this.dom = dom;
             this.template = template;
+            this.isDirty = false;
         }
         DomElement.prototype.getValue = function () {
-            var args = this.bindings.map(function (b) { return b.value; });
+            var args = this.bindings.map(function (b) { return b.value === null ? '' : b.value; });
             return this.template.apply(this, args);
         };
         DomElement.prototype.update = function () {
@@ -23,7 +24,6 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         __extends(DomText, _super);
         function DomText() {
             _super.apply(this, arguments);
-            this.bindings = [];
         }
         DomText.prototype.update = function () {
             this.dom.textContent = this.getValue();
@@ -35,7 +35,6 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         __extends(DomAttribute, _super);
         function DomAttribute() {
             _super.apply(this, arguments);
-            this.bindings = [];
         }
         DomAttribute.prototype.update = function () {
             this.dom.nodeValue = this.getValue();
@@ -59,34 +58,36 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         function Binding(property) {
             this.property = property;
             this.children = [];
-            this.isDirty = true;
+            this.elements = [];
+            this.value = null;
         }
-        Binding.prototype.update = function (model) {
-            var i;
-            var propertyValue = model && model.hasOwnProperty(this.property) ? model[this.property] : null;
-            if (this.value !== propertyValue) {
-                this.value = propertyValue;
-                this.isDirty = true;
+        Binding.prototype.update = function (newValue) {
+            if (this.updateValue(newValue)) {
+                this.updateChildren(newValue);
             }
-            for (i = 0; i < this.children.length; i++) {
-                var child = this.children[i];
-                child.update(propertyValue);
+            else if (!newValue || !newValue.isPure) {
+                this.updateChildren(newValue);
             }
         };
-        Binding.prototype.toString = function () {
-            var children = this.children;
-            if (children.length === 0)
-                return this.property;
-            var s = this.property;
-            //if (this.domElements.length)
-            //    s += "(" + this.domElements.length + ")";
-            s += "[";
-            for (var i in children) {
-                if (children.hasOwnProperty(i)) {
-                    s += "-" + children[i].toString();
-                }
+        Binding.prototype.updateValue = function (newValue) {
+            if (this.value !== newValue) {
+                this.value = newValue;
+                this.invalidate();
+                return true;
             }
-            return s + "]";
+            return false;
+        };
+        Binding.prototype.updateChildren = function (newValue) {
+            for (var i = 0; i < this.children.length; i++) {
+                var child = this.children[i];
+                child.update(!!newValue ? newValue[child.property] : null);
+            }
+        };
+        Binding.prototype.invalidate = function () {
+            for (var i = 0; i < this.elements.length; i++) {
+                var elt = this.elements[i];
+                elt.isDirty = true;
+            }
         };
         return Binding;
     })();
@@ -101,9 +102,8 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         Binder.prototype.bind = function (root, model) {
             var _this = this;
             this.root = root;
-            this.model = model;
             this.root.addEventListener("click", function () {
-                _this.update();
+                _this.updateDom();
             });
             var stack = [this.root];
             while (stack.length > 0) {
@@ -114,6 +114,8 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                     if (value) {
                         var template = _this.templateEngine.compile(attribute.value);
                         if (template) {
+                            var domElement = new DomAttribute(attribute, template.func);
+                            _this.bindDom(domElement, template);
                         }
                     }
                 });
@@ -127,8 +129,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                             var template = _this.templateEngine.compile(child.textContent);
                             if (template) {
                                 var domElement = new DomText(child, template.func);
-                                domElement.bindings = template.params.map(function (param) { return _this.parseBinding(param.split('.'), 0, _this.bindings); });
-                                _this.elements.push(domElement);
+                                _this.bindDom(domElement, template);
                             }
                         }
                     }
@@ -145,41 +146,49 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                 //    dom.setAttributeNode(valueAttribute);
                 //}
                 dom.addEventListener("change", function (event) {
-                    _this.model[event.target.name] = event.target.value;
-                    _this.update();
+                    var path = event.target.name.split(".");
+                    _this.set(path, event.target.value);
+                    _this.updateDom();
                 });
             }
         };
-        //addBinding(expression: string, dom?: DomElement) {
-        //    this.mergeBindings([this.parseBinding(expression)], this.bindings);
-        //}
-        //mergeBindings(source: Binding[], target: Binding[]) {
-        //    for (var i = 0; i < source.length; i++) {
-        //        var x = source[i];
-        //        if (!this.mergeBinding(x, target))
-        //            target.push(x);
-        //    }
-        //}
-        //mergeBinding(x: Binding, target: Binding[]): boolean {
-        //    for (var j = 0; j < target.length; j++) {
-        //        if (x.property === target[j].property) {
-        //            var targetBinding = target[j];
-        //            this.mergeBindings(x.children, targetBinding.children);
-        //            // targetBinding.domElements.concat(x.domElements);
-        //            return true;
-        //        }
-        //    }
-        //    return false;
-        //}
-        Binder.prototype.update = function () {
-            console.log(this.bindings.length);
+        Binder.prototype.update = function (model) {
             for (var i = 0; i < this.bindings.length; i++) {
                 var b = this.bindings[i];
-                b.update(this.model);
+                b.update(!!model ? model[b.property] : null);
             }
+            return this;
+        };
+        Binder.prototype.set = function (path, model) {
+            var children = this.bindings;
+            var i;
+            for (var i = 0, e = 0; e < path.length && i < children.length;) {
+                var b = children[i];
+                if (b.property == path[e]) {
+                    e++;
+                    if (e == path.length) {
+                        b.update(model);
+                        return;
+                    }
+                    children = b.children;
+                    i = 0;
+                }
+                else {
+                    i++;
+                }
+            }
+            if (!path || path.length == 0) {
+                this.update(model);
+            }
+            return this;
+        };
+        Binder.prototype.updateDom = function () {
             for (var i = 0; i < this.elements.length; i++) {
                 var elt = this.elements[i];
-                elt.update();
+                if (elt.isDirty) {
+                    elt.update();
+                    elt.isDirty = false;
+                }
             }
         };
         Binder.prototype.parseBinding = function (path, offset, target) {
@@ -187,7 +196,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             for (var j = 0; j < target.length; j++) {
                 if (property === target[j].property) {
                     var targetBinding = target[j];
-                    if (offset < path.length)
+                    if ((offset + 1) < path.length)
                         return this.parseBinding(path, offset + 1, targetBinding.children);
                     else
                         return targetBinding;
@@ -211,26 +220,22 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             var bindings = this.bindings;
             for (var i in bindings) {
                 if (bindings.hasOwnProperty(i)) {
-                    s += bindings[i].toString() + "\n";
+                    s += "-" + bindings[i].toString() + "\n";
                 }
             }
             return s;
+        };
+        Binder.prototype.bindDom = function (domElement, template) {
+            var _this = this;
+            domElement.bindings = template.params.map(function (param) {
+                var b = _this.parseBinding(param.split('.'), 0, _this.bindings);
+                b.elements.push(domElement);
+                return b;
+            });
+            this.elements.push(domElement);
         };
         return Binder;
     })();
     exports.Binder = Binder;
 });
-//var binder = new Binder(new engine.TemplateEngine());
-//binder.addBinding("a.b", new DomTest(123, binder.templateEngine.compile("[ {{firstName}} {{lastName}} ]")));
-//binder.addBinding("a.b.c", new DomTest(123, binder.templateEngine.compile("[ {{firstName}} {{lastName}} ]")));
-//binder.addBinding("a.b.d");
-//binder.addBinding("a.g.h.b");
-//var person: any = { firstName: "ibrahim", lastName: "ben Salah" };
-//var start = new Date().getTime();
-//for (var e = 0; e < 744; e++) {
-//    binder.update({ a: { b: person } });
-//}
-//var end = new Date().getTime();
-//console.log(end - start);
-//console.log(binder.toString());  
 //# sourceMappingURL=xania.js.map

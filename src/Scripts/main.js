@@ -1,7 +1,81 @@
 define(["require", "exports", "xania"], function (require, exports, Xania) {
-    var binder = new Xania.Binder();
-    var model = { firstName: "Ibrahim", lastName: "ben Salah" };
-    binder.bind(document.getElementById("container"), model);
-    binder.update();
+    var personBinder = new Xania.Binder();
+    personBinder
+        .bind(document.getElementById("container"), {})
+        .update({ person: { firstName: "Ibrahim", lastName: "ben Salah" } })
+        .updateDom();
+    var Calendar = (function () {
+        function Calendar() {
+        }
+        Calendar.prototype.setCell = function (day, hour, results) {
+            var cell = new Cell(day, hour);
+            cell.setResults(results);
+            if (!this[day])
+                this[day] = {};
+            this[day][hour] = cell;
+            return this[day][hour];
+        };
+        Calendar.prototype.getCell = function (day, hour, results) {
+            var cell = new Cell(day, hour);
+            cell.setResults(results);
+            return cell;
+        };
+        return Calendar;
+    })();
+    exports.Calendar = Calendar;
+    var Cell = (function () {
+        function Cell(day, hour) {
+            this.status = {};
+            this.isPure = true;
+            this.day = day;
+            this.hour = hour;
+            this.style = {
+                showHour: "",
+                showSpinner: "display: none",
+                showSearchResults: "display: none"
+            };
+        }
+        Object.defineProperty(Cell.prototype, "hours", {
+            get: function () {
+                return ("00" + (this.hour + 1)).slice(-2);
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Cell.prototype.setResults = function (results) {
+            this.style = {
+                showHour: "display: none",
+                showSpinner: "display: none",
+                showSearchResults: ""
+            };
+            this.status = {
+                searchResults: {
+                    options: Math.floor(results * 10)
+                }
+            };
+        };
+        Object.defineProperty(Cell.prototype, "cellClass", {
+            get: function () {
+                if (this.status.isSearching) {
+                    return 'searching';
+                }
+                else if (this.status.searchResults) {
+                    if (this.status.searchResults.options > 3) {
+                        return 'good-results';
+                    }
+                    else if (this.status.searchResults.options > 1) {
+                        return 'weak-results';
+                    }
+                    else {
+                        return 'bad-results';
+                    }
+                }
+            },
+            enumerable: true,
+            configurable: true
+        });
+        return Cell;
+    })();
+    exports.Cell = Cell;
 });
 //# sourceMappingURL=main.js.map

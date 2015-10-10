@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Web.Mvc;
 using System.Web.Routing;
+using WebApplication2;
 
 namespace BinderJS.Web
 {
@@ -9,7 +10,7 @@ namespace BinderJS.Web
 
         protected void Application_Start(object sender, EventArgs e)
         {
-            RouteTable.Routes.MapRoute(name: "Default", url:"{controller}/{index}");
+            RouteConfig.RegisterRoutes(RouteTable.Routes);
         }
 
         protected void Session_Start(object sender, EventArgs e)
