@@ -2,31 +2,27 @@
 
 export class DomElement {
     bindings: Binding[];
+    isDirty: boolean = false;
 
     constructor(public dom: any, public template: any) {
     }
 
     getValue(): string {
-        var args = this.bindings.map(b => b.value);
+        var args = this.bindings.map(b => b.value === null ? '' : b.value);
         return this.template.apply(this, args);
     }
 
     update() {
-        
     }
 }
 
 export class DomText extends DomElement {
-    bindings: Binding[] = [];
-
     update() {
         this.dom.textContent = this.getValue();
     }
 }
 
 export class DomAttribute extends DomElement {
-    bindings: Binding[] = [];
-
     update() {
         this.dom.nodeValue = this.getValue();
     }
@@ -42,59 +38,58 @@ export class DomTest extends DomElement {
 
 export class Binding {
     public children: Binding[] = [];
-    public value;
-    private isDirty: boolean = true;
+    public elements: DomElement[] = [];
+    public value = null;
 
     constructor(public property: string) {
     }
 
-    update(model: any) {
-        var i: number;
-        var propertyValue = model && model.hasOwnProperty(this.property) ? model[this.property] : null;
-        if (this.value !== propertyValue) {
-            this.value = propertyValue;
-            this.isDirty = true;
+    update(newValue: any) {
+        if (this.updateValue(newValue)) {
+            this.updateChildren(newValue);
         }
-
-        for (i = 0; i < this.children.length; i++) {
-            var child = this.children[i];
-            child.update(propertyValue);
+        else if (!newValue || !newValue.isPure) {
+            this.updateChildren(newValue);
         }
     }
 
-    toString() {
-        var children = this.children;
-        if (children.length === 0)
-            return this.property;
-
-        var s = this.property;
-        //if (this.domElements.length)
-        //    s += "(" + this.domElements.length + ")";
-
-        s += "[";
-        for (var i in children) {
-            if (children.hasOwnProperty(i)) {
-                s += "-" + children[i].toString();
-            }
+    updateValue(newValue: any): boolean {
+        if (this.value !== newValue) {
+            this.value = newValue;
+            this.invalidate();
+            return true;
         }
-        return s + "]";
+        return false;
+    }
+
+    updateChildren(newValue: any) {
+        for (var i = 0; i < this.children.length; i++) {
+            var child = this.children[i];
+            child.update(!!newValue ? newValue[child.property] : null);
+        }
+    }
+
+    invalidate() {
+        for (var i = 0; i < this.elements.length; i++) {
+            var elt = this.elements[i];
+            elt.isDirty = true;
+        }
     }
 }
 
 export class Binder {
     bindings: Binding[] = [];
     elements: DomElement[] = [];
-    root; model;
+    root;
 
     constructor(public templateEngine: engine.TemplateEngine = new engine.TemplateEngine()) {
     }
 
     bind(root: any, model: any) {
         this.root = root;
-        this.model = model;
 
         this.root.addEventListener("click", () => {
-            this.update();
+            this.updateDom();
         });
 
         var stack = [this.root];
@@ -107,12 +102,8 @@ export class Binder {
                 if (value) {
                     var template: any = this.templateEngine.compile(attribute.value);
                     if (template) {
-                        //var domElement = new DomAttribute(attribute, template.func);
-                        //domElement.bindings = template.args.map(a => this.parseBinding(a));
-
-                        //// this.bindings = this.bindings.concat(domElement.bindings);
-
-                        //this.elements.push(domElement);
+                        var domElement = new DomAttribute(attribute, template.func);
+                        this.bindDom(domElement, template);
                     }
                 }
             });
@@ -121,14 +112,12 @@ export class Binder {
                 if (child.nodeType === 1) {
                     stack.push(child);
                 } else if (child.nodeType === 3) {
-                    const textContent = child.textContent.trim();
+                    var textContent = child.textContent.trim();
                     if (textContent) {
                         var template: any = this.templateEngine.compile(child.textContent);
                         if (template) {
                             var domElement = new DomText(child, template.func);
-                            domElement.bindings = template.params.map(param => this.parseBinding(param.split('.'), 0, this.bindings));
-
-                            this.elements.push(domElement);
+                            this.bindDom(domElement, template);
                         }
                     }
                 }
@@ -145,46 +134,53 @@ export class Binder {
             //    dom.setAttributeNode(valueAttribute);
             //}
             dom.addEventListener("change", event => {
-                this.model[event.target.name] = event.target.value;
-                this.update();
+                var path = event.target.name.split(".");
+                this.set(path, event.target.value);
+                this.updateDom();
             });
         }
     }
 
-    //addBinding(expression: string, dom?: DomElement) {
-    //    this.mergeBindings([this.parseBinding(expression)], this.bindings);
-    //}
-
-    //mergeBindings(source: Binding[], target: Binding[]) {
-    //    for (var i = 0; i < source.length; i++) {
-    //        var x = source[i];
-    //        if (!this.mergeBinding(x, target))
-    //            target.push(x);
-    //    }
-    //}
-
-    //mergeBinding(x: Binding, target: Binding[]): boolean {
-    //    for (var j = 0; j < target.length; j++) {
-    //        if (x.property === target[j].property) {
-    //            var targetBinding = target[j];
-    //            this.mergeBindings(x.children, targetBinding.children);
-    //            // targetBinding.domElements.concat(x.domElements);
-    //            return true;
-    //        }
-    //    }
-    //    return false;
-    //}
-
-    update() {
-        console.log(this.bindings.length);
+    update(model): Binder {
         for (var i = 0; i < this.bindings.length; i++) {
             var b = this.bindings[i];
-            b.update(this.model);
+            b.update(!!model ? model[b.property] : null);
+        }
+        return this;
+    }
+
+    set(path: string[], model: any): Binder {
+        var children = this.bindings;
+        var i: number;
+        for (var i = 0, e = 0; e < path.length && i < children.length;) {
+            var b = children[i];
+            if (b.property == path[e]) {
+                e++;
+                if (e == path.length) {
+                    b.update(model);
+                    return;
+                }
+                children = b.children;
+                i = 0;
+            } else {
+                i++;
+            }
         }
 
+        if (!path || path.length == 0) {
+            this.update(model);
+        }
+
+        return this;
+    }
+
+    updateDom() {
         for (var i = 0; i < this.elements.length; i++) {
             var elt = this.elements[i];
-            elt.update();
+            if (elt.isDirty) {
+                elt.update();
+                elt.isDirty = false;
+            }
         }
     }
 
@@ -193,13 +189,13 @@ export class Binder {
         for (var j = 0; j < target.length; j++) {
             if (property === target[j].property) {
                 var targetBinding = target[j];
-                if (offset < path.length)
+                if ((offset + 1) < path.length)
                     return this.parseBinding(path, offset + 1, targetBinding.children);
                 else
                     return targetBinding;
             }
         }
-        
+
         var parent: Binding = new Binding(property);
         target.push(parent);
 
@@ -222,27 +218,19 @@ export class Binder {
         var bindings = this.bindings;
         for (var i in bindings) {
             if (bindings.hasOwnProperty(i)) {
-                s += bindings[i].toString() + "\n";
+                s += "-" + bindings[i].toString() + "\n";
             }
         }
         return s;
     }
+
+    bindDom(domElement: DomText, template) {
+        domElement.bindings = template.params.map(param => {
+            var b = this.parseBinding(param.split('.'), 0, this.bindings);
+            b.elements.push(domElement);
+            return b;
+        });
+
+        this.elements.push(domElement);
+    }
 }
-
-//var binder = new Binder(new engine.TemplateEngine());
-//binder.addBinding("a.b", new DomTest(123, binder.templateEngine.compile("[ {{firstName}} {{lastName}} ]")));
-//binder.addBinding("a.b.c", new DomTest(123, binder.templateEngine.compile("[ {{firstName}} {{lastName}} ]")));
-//binder.addBinding("a.b.d");
-//binder.addBinding("a.g.h.b");
-
-//var person: any = { firstName: "ibrahim", lastName: "ben Salah" };
-
-//var start = new Date().getTime();
-//for (var e = 0; e < 744; e++) {
-//    binder.update({ a: { b: person } });
-//}
-//var end = new Date().getTime();
-
-//console.log(end - start);
-
-//console.log(binder.toString()); 
