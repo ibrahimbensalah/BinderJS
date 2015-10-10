@@ -1,0 +1,122 @@
+﻿@{
+    Layout = null;
+    int days = 7;
+    int hours = 7;
+}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Xania Binding Lab</title>
+    <link href="~/Content/calendar.css" rel="stylesheet" />
+    <!-- data-main attribute tells require.js to load
+    scripts/main.js after require.js loads. -->
+    <script>
+        var model = null;
+        var binder = null;
+
+        function cellClicked(d, h) {
+            binder.set([d.toString(), h.toString()], model.getCell(d, h, Math.random()));
+            // model.setCell(d, h, Math.random());
+        }
+
+        function step() {
+            for (var d = 0; d < @days; d++) {
+                for (var h = 0; h < @hours; h++) {
+                    // cellClicked(d, h);
+                    binder.set([d.toString(), h.toString()], model.getCell(d, h, Math.random()));
+                    window.requestAnimationFrame(binder.updateDom.bind(binder));
+                }
+            }
+            // binder.update(model);
+            // window.requestAnimationFrame(binder.updateDom.bind(binder));
+        }
+
+        function startAnimation() {
+            setInterval(step, 16);
+        }
+
+        var measures = [];
+        function loadAll() {
+            var start = new Date().getTime();
+            step();
+            var end = new Date().getTime();
+
+            measures.push(end - start);
+
+            if (measures.length > 5)
+                measures.splice(0, 0);
+
+            var total = 0;
+            for (var i in measures) {
+                total += measures[i];
+            }
+
+            console.log("average elapsedTime ", total / measures.length);
+        }
+    </script>
+</head>
+<body>
+    <button onclick="loadAll();">load all</button>
+    <button onclick="startAnimation();">start animation</button>
+
+<div id="calendar">
+    <table>
+        <tr>
+            @for (var day = 0; day < days; day++)
+            {
+                <th class="day-header">
+                    @(day + 1) Oct
+                </th>
+            }
+        </tr>
+        @for (var h = 0; h < hours; h++)
+        {
+            <tr>
+                @for (var day = 0; day < days; day++)
+                {
+                    <td class="hour-cell">
+                        @CalendarCell(day, h)
+                    </td>
+                }
+            </tr>
+        }
+    </table>
+</div>
+
+    <div id="container">
+        <input type="text" name="person.firstName" />
+        <input type="text" name="person.lastName" />
+
+        <p>{{person.firstName}} {{person.lastName}}</p>
+        <p>{{person.lastName}} {{person.firstName}}</p>
+        <p>{{person.firstName}}</p>
+    </div>
+    <script data-main="scripts/main" src="~/scripts/require.js"></script>
+    <script>
+        require(['main', 'xania'], function (main, xn) {
+            model = new main.Calendar();
+            binder = new xn.Binder()
+                .bind(document.getElementById("calendar"), model);
+        });
+    </script>
+</body>
+</html>
+
+@helper CalendarCell(int day, int hour)
+{
+    <div onclick="cellClicked(@day, @hour)" class="{{@(day).@(hour).cellClass}}">
+        @* ReSharper disable CssNotResolved *@
+        <div style="{{@(day).@(hour).style.showHour}}" class="time">
+            {{@(day).@(hour).hours}}:00
+        </div>
+        <div style="{{@(day).@(hour).style.showSpinner}}">
+            ...
+        </div>
+        <div style="{{@(day).@(hour).style.showSearchResults}}">
+            <div>{{@(day).@(hour).status.searchResults.options}}</div>
+            <div class="result-label">results</div>
+        </div>
+        @* ReSharper restore CssNotResolved *@
+    </div>
+}
