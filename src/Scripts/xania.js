@@ -56,6 +56,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
     exports.DomTest = DomTest;
     var Binding = (function () {
         function Binding(property) {
+            if (property === void 0) { property = null; }
             this.property = property;
             this.children = [];
             this.elements = [];
@@ -96,7 +97,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         function Binder(templateEngine) {
             if (templateEngine === void 0) { templateEngine = new engine.TemplateEngine(); }
             this.templateEngine = templateEngine;
-            this.bindings = [];
+            this.rootBinding = new Binding();
             this.elements = [];
         }
         Binder.prototype.bind = function (root, model) {
@@ -109,33 +110,30 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             while (stack.length > 0) {
                 var dom = stack.pop();
                 this.performConventions(dom);
-                Array.prototype.forEach.call(dom.attributes, function (attribute) {
-                    var value = attribute.value.trim();
-                    if (value) {
-                        var template = _this.templateEngine.compile(attribute.value);
-                        if (template) {
-                            var domElement = new DomAttribute(attribute, template.func);
-                            _this.bindDom(domElement, template);
-                        }
-                    }
-                });
-                Array.prototype.forEach.call(dom.childNodes, function (child) {
+                for (var i = 0; i < dom.attributes.length; i++) {
+                    var attribute = dom.attributes[i];
+                    this.compileTemplate(attribute.value, function (tpl) { return new DomAttribute(attribute, tpl); });
+                }
+                for (var i = 0; i < dom.childNodes.length; i++) {
+                    var child = dom.childNodes[i];
                     if (child.nodeType === 1) {
                         stack.push(child);
                     }
                     else if (child.nodeType === 3) {
-                        var textContent = child.textContent.trim();
-                        if (textContent) {
-                            var template = _this.templateEngine.compile(child.textContent);
-                            if (template) {
-                                var domElement = new DomText(child, template.func);
-                                _this.bindDom(domElement, template);
-                            }
-                        }
+                        this.compileTemplate(child.textContent, function (tpl) { return new DomText(child, tpl); });
                     }
-                });
+                }
             }
             return this;
+        };
+        Binder.prototype.compileTemplate = function (template, factory) {
+            if (template && template.trim()) {
+                var compiled = this.templateEngine.compile(template);
+                if (compiled) {
+                    var domElement = factory(compiled.func);
+                    this.bindDom(domElement, compiled.params);
+                }
+            }
         };
         Binder.prototype.performConventions = function (dom) {
             var _this = this;
@@ -153,32 +151,30 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             }
         };
         Binder.prototype.update = function (model) {
-            for (var i = 0; i < this.bindings.length; i++) {
-                var b = this.bindings[i];
-                b.update(!!model ? model[b.property] : null);
-            }
+            this.rootBinding.updateChildren(model);
             return this;
         };
         Binder.prototype.set = function (path, model) {
-            var children = this.bindings;
-            var i;
-            for (var i = 0, e = 0; e < path.length && i < children.length;) {
-                var b = children[i];
-                if (b.property == path[e]) {
-                    e++;
-                    if (e == path.length) {
-                        b.update(model);
-                        return;
-                    }
-                    children = b.children;
-                    i = 0;
-                }
-                else {
-                    i++;
-                }
-            }
+            var children = this.rootBinding.children;
             if (!path || path.length == 0) {
                 this.update(model);
+            }
+            else {
+                for (var i = 0, e = 0; e < path.length && i < children.length;) {
+                    var b = children[i];
+                    if (b.property == path[e]) {
+                        e++;
+                        if (e == path.length) {
+                            b.update(model);
+                            break;
+                        }
+                        children = b.children;
+                        i = 0;
+                    }
+                    else {
+                        i++;
+                    }
+                }
             }
             return this;
         };
@@ -217,7 +213,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         };
         Binder.prototype.toString = function () {
             var s = "";
-            var bindings = this.bindings;
+            var bindings = this.rootBinding.children;
             for (var i in bindings) {
                 if (bindings.hasOwnProperty(i)) {
                     s += "-" + bindings[i].toString() + "\n";
@@ -225,10 +221,10 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             }
             return s;
         };
-        Binder.prototype.bindDom = function (domElement, template) {
+        Binder.prototype.bindDom = function (domElement, params) {
             var _this = this;
-            domElement.bindings = template.params.map(function (param) {
-                var b = _this.parseBinding(param.split('.'), 0, _this.bindings);
+            domElement.bindings = params.map(function (param) {
+                var b = _this.parseBinding(param.split('.'), 0, _this.rootBinding.children);
                 b.elements.push(domElement);
                 return b;
             });

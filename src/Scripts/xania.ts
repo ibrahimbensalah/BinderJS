@@ -41,7 +41,7 @@ export class Binding {
     public elements: DomElement[] = [];
     public value = null;
 
-    constructor(public property: string) {
+    constructor(public property: string = null) {
     }
 
     update(newValue: any) {
@@ -78,7 +78,7 @@ export class Binding {
 }
 
 export class Binder {
-    bindings: Binding[] = [];
+    private rootBinding: Binding = new Binding();
     elements: DomElement[] = [];
     root;
 
@@ -97,33 +97,31 @@ export class Binder {
             var dom = stack.pop();
             this.performConventions(dom);
 
-            Array.prototype.forEach.call(dom.attributes, attribute => {
-                var value = attribute.value.trim();
-                if (value) {
-                    var template: any = this.templateEngine.compile(attribute.value);
-                    if (template) {
-                        var domElement = new DomAttribute(attribute, template.func);
-                        this.bindDom(domElement, template);
-                    }
-                }
-            });
+            for (var i = 0; i < dom.attributes.length; i++) {
+                var attribute = dom.attributes[i];
+                this.compileTemplate(attribute.value, tpl => new DomAttribute(attribute, tpl));
+            }
 
-            Array.prototype.forEach.call(dom.childNodes, child => {
+            for (var i = 0; i < dom.childNodes.length; i++) {
+                var child = dom.childNodes[i];
                 if (child.nodeType === 1) {
                     stack.push(child);
                 } else if (child.nodeType === 3) {
-                    var textContent = child.textContent.trim();
-                    if (textContent) {
-                        var template: any = this.templateEngine.compile(child.textContent);
-                        if (template) {
-                            var domElement = new DomText(child, template.func);
-                            this.bindDom(domElement, template);
-                        }
-                    }
+                    this.compileTemplate(child.textContent, tpl => new DomText(child, tpl));
                 }
-            });
+            }
         }
         return this;
+    }
+
+    private compileTemplate(template, factory: (tpl: any) => DomElement) {
+        if (template && template.trim()) {
+            var compiled: any = this.templateEngine.compile(template);
+            if (compiled) {
+                var domElement = factory(compiled.func);
+                this.bindDom(domElement, compiled.params);
+            }
+        }
     }
 
     performConventions(dom: any) {
@@ -142,33 +140,30 @@ export class Binder {
     }
 
     update(model): Binder {
-        for (var i = 0; i < this.bindings.length; i++) {
-            var b = this.bindings[i];
-            b.update(!!model ? model[b.property] : null);
-        }
+        this.rootBinding.updateChildren(model);
         return this;
     }
 
     set(path: string[], model: any): Binder {
-        var children = this.bindings;
-        var i: number;
-        for (var i = 0, e = 0; e < path.length && i < children.length;) {
-            var b = children[i];
-            if (b.property == path[e]) {
-                e++;
-                if (e == path.length) {
-                    b.update(model);
-                    return;
-                }
-                children = b.children;
-                i = 0;
-            } else {
-                i++;
-            }
-        }
+        var children = this.rootBinding.children;
 
         if (!path || path.length == 0) {
             this.update(model);
+        } else {
+            for (var i = 0, e = 0; e < path.length && i < children.length;) {
+                var b = children[i];
+                if (b.property == path[e]) {
+                    e++;
+                    if (e == path.length) {
+                        b.update(model);
+                        break;
+                    }
+                    children = b.children;
+                    i = 0;
+                } else {
+                    i++;
+                }
+            }
         }
 
         return this;
@@ -215,7 +210,7 @@ export class Binder {
 
     toString() {
         var s = "";
-        var bindings = this.bindings;
+        var bindings = this.rootBinding.children;
         for (var i in bindings) {
             if (bindings.hasOwnProperty(i)) {
                 s += "-" + bindings[i].toString() + "\n";
@@ -224,9 +219,9 @@ export class Binder {
         return s;
     }
 
-    bindDom(domElement: DomText, template) {
-        domElement.bindings = template.params.map(param => {
-            var b = this.parseBinding(param.split('.'), 0, this.bindings);
+    bindDom(domElement: DomText, params) {
+        domElement.bindings = params.map(param => {
+            var b = this.parseBinding(param.split('.'), 0, this.rootBinding.children);
             b.elements.push(domElement);
             return b;
         });
