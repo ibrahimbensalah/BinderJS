@@ -63,8 +63,7 @@ export class Binding {
 
     updateChildren(newValue: any) {
         for (var i = 0; i < this.children.length; i++) {
-            var key = this.children.keys[i];
-            var child = this.children.get(key);
+            var child = this.children.elementAt(i);
             if (!!newValue) {
                 var childValue = child.accessor(newValue);
                 child.update(childValue);
@@ -238,5 +237,10 @@ export class Map<T> {
 
     get length() {
         return this.keys.length;
+    }
+
+    elementAt(i: number) {
+        var key = this.keys[i];
+        return key && this.get(key);
     }
 }

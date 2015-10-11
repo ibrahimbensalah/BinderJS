@@ -77,8 +77,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         };
         Binding.prototype.updateChildren = function (newValue) {
             for (var i = 0; i < this.children.length; i++) {
-                var key = this.children.keys[i];
-                var child = this.children.get(key);
+                var child = this.children.elementAt(i);
                 if (!!newValue) {
                     var childValue = child.accessor(newValue);
                     child.update(childValue);
@@ -247,6 +246,10 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             enumerable: true,
             configurable: true
         });
+        Map.prototype.elementAt = function (i) {
+            var key = this.keys[i];
+            return key && this.get(key);
+        };
         return Map;
     })();
     exports.Map = Map;
