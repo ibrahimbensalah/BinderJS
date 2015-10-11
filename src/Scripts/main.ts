@@ -2,10 +2,10 @@
 
 var personBinder = new Xania.Binder();
 
-personBinder
-    .bind(document.getElementById("container"))
-    .update([], { person: { firstName: "Ibrahim", lastName: "ben Salah" } })
-    .updateDom();
+//personBinder
+//    .bind(document.getElementById("container"))
+//    .update([], { person: { firstName: "Ibrahim", lastName: "ben Salah" } })
+//    .updateDom();
 
 
 export class Calendar {
@@ -34,7 +34,6 @@ export class Cell {
     hour: number;
     style: any;
     status: any = {};
-    isPure: boolean = false;
 
     constructor(day, hour) {
         this.day = day;
@@ -44,6 +43,11 @@ export class Cell {
             showSpinner: "display: none",
             showSearchResults: "display: none"
         };
+        this.status = {
+            searchResults: {
+                options: 0
+            }
+        }
     }
     get hours(): string {
         return ("00" + (this.hour + 1)).slice(-2);
@@ -55,9 +59,10 @@ export class Cell {
             showSpinner: "display: none",
             showSearchResults: ""
         };
+
         this.status = {
             searchResults: {
-                options: Math.floor(results * 10)
+                options: (this.status.searchResults.options + Math.floor(results * 9)) % 10
             }
         }
     }

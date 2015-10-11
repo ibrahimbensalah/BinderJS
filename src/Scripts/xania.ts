@@ -36,43 +36,38 @@ export class DomTest extends DomElement {
 }
 
 export class Binding {
-    public children: Binding[] = [];
+    public children = new Map<Binding>();
     public elements: DomElement[] = [];
     public value = null;
 
-    constructor(public property: string = null) {
+    constructor(public accessor: Function) {
     }
 
     update(newValue: any) {
         if (this.value === newValue) {
             return;
         }
-        this.updateValue(newValue);
+        this.value = newValue;
+        this.invalidate();
+
         this.updateChildren(newValue);
 
         if (!!newValue && this.children.length > 0) {
             var o: any = Object;
             var self = this;
-            o.observe(newValue, changes => {
+            o.observe(newValue, (): void => {
                 self.updateChildren(newValue);
             }, ["update"]);
         }
     }
 
-    updateValue(newValue: any): boolean {
-        if (this.value !== newValue) {
-            this.value = newValue;
-            this.invalidate();
-            return true;
-        }
-        return false;
-    }
-
     updateChildren(newValue: any) {
         for (var i = 0; i < this.children.length; i++) {
-            var child = this.children[i];
+            var key = this.children.keys[i];
+            var child = this.children.get(key);
             if (!!newValue) {
-                child.update(newValue[child.property]);
+                var childValue = child.accessor(newValue);
+                child.update(childValue);
             } else {
                 child.update(null);
             }
@@ -88,7 +83,7 @@ export class Binding {
 }
 
 export class Binder {
-    private rootBinding: Binding = new Binding();
+    private rootBinding: Binding = new Binding(() => null);
     elements: DomElement[] = [];
     root;
 
@@ -105,27 +100,26 @@ export class Binder {
         var domStack = [{ dom: this.root, scope: [] }];
 
         while (domStack.length > 0) {
-            var item = domStack.pop();
-            var dom = item.dom;
-            var scope = item.scope;
-            var childScope = scope.slice(0);
+            var current = domStack.pop();
+            var dom = current.dom;
+            var childScope = current.scope.slice(0);
 
-            if (dom.attributes['[model]']) {
-                Array.prototype.push.apply(childScope, dom.attributes['[model]'].value.split("."));
+            if (dom.attributes["data-model"]) {
+                Array.prototype.push.apply(childScope, dom.attributes["data-model"].value.split("."));
             }
 
-            this.performConventions(dom);
-
-            for (var i = 0; i < dom.attributes.length; i++) {
+            this.performConventions(current.scope, dom);
+            let i: number;
+            for (i = 0; i < dom.attributes.length; i++) {
                 var attribute = dom.attributes[i];
-                this.compileTemplate(attribute.value, scope, tpl => new DomAttribute(attribute, tpl));
+                this.compileTemplate(attribute.value, current.scope, tpl => new DomAttribute(attribute, tpl));
             }
-            for (var i = 0; i < dom.childNodes.length; i++) {
+            for (i = 0; i < dom.childNodes.length; i++) {
                 var child = dom.childNodes[i];
                 if (child.nodeType === 1) {
                     domStack.push({ dom: child, scope: childScope});
                 } else if (child.nodeType === 3) {
-                    this.compileTemplate(child.textContent, scope, tpl => new DomText(child, tpl));
+                    this.compileTemplate(child.textContent, current.scope, tpl => new DomText(child, tpl));
                 }
             }
         }
@@ -146,15 +140,16 @@ export class Binder {
         }
     }
 
-    performConventions(dom: any) {
-        if (dom.tagName === "INPUT" && dom.name) {
+    performConventions(scope: string[], dom: any) {
+        if (dom.tagName === "INPUT" && dom.attributes["data-name"]) {
+            var name = dom.attributes["data-name"].value;
             if (!dom.value) {
                 var valueAttribute = document.createAttribute("value");
-                valueAttribute.value = "{{" + dom.name + "}}";
+                valueAttribute.value = "{{" + name + "}}";
                 dom.setAttributeNode(valueAttribute);
             }
             dom.addEventListener("change", event => {
-                var path = event.target.name.split(".");
+                var path = scope.concat(name.split("."));
                 this.update(path, event.target.value);
                 this.updateDom();
             });
@@ -162,23 +157,21 @@ export class Binder {
     }
 
     update(path: string[], model: any): Binder {
-        if (!path || path.length == 0) {
+        if (!path || path.length === 0) {
             this.rootBinding.updateChildren(model);
         } else {
             var children = this.rootBinding.children;
 
-            for (var i = 0, e = 0; e < path.length && i < children.length;) {
-                var b = children[i];
-                if (b.property == path[e]) {
-                    e++;
-                    if (e === path.length) {
+            for (var e = 0; e < path.length; e++) {
+                var b = children.get(path[e]);
+                if (!!b) {
+                    if ((e + 1) === path.length) {
                         b.update(model);
                         break;
                     }
                     children = b.children;
-                    i = 0;
                 } else {
-                    i++;
+                    break;
                 }
             }
         }
@@ -186,7 +179,10 @@ export class Binder {
         return this;
     }
 
-    updateDom() {
+    /**
+     * @returns number of affected records
+     */
+    updateDom(): number {
         var count = 0;
         for (var i = 0; i < this.elements.length; i++) {
             var elt = this.elements[i];
@@ -196,61 +192,51 @@ export class Binder {
                 count++;
             }
         }
-        // if (count > 0)
-           // console.log('count of dom updates', count);
+        return count;
     }
 
-    parseBinding(path: string[], offset: number, target: Binding[]): Binding {
+    parseBinding(path: string[], offset: number, target: Map<Binding>): Binding {
         var property = path[offset];
-        for (var j = 0; j < target.length; j++) {
-            if (property === target[j].property) {
-                var targetBinding = target[j];
-                if ((offset + 1) < path.length)
-                    return this.parseBinding(path, offset + 1, targetBinding.children);
-                else
-                    return targetBinding;
-            }
+        var targetBinding = target.get(property);
+        if (!!targetBinding) {
+            if ((offset + 1) < path.length)
+                return this.parseBinding(path, offset + 1, targetBinding.children);
+            else
+                return targetBinding;
         }
 
-        var parent = new Binding(property);
-        target.push(parent);
+        var parent = new Binding(this.createAccessor(property));
+        target.add(property, parent);
 
         for (var i = offset + 1; i < path.length; i++) {
-            var child = new Binding(path[i]);
-            parent.children.push(child);
+            var p = path[i];
+            var child = new Binding(this.createAccessor(path[i]));
+            parent.children.add(p, child);
             parent = child;
         }
 
         return parent;
     }
 
-    toString() {
-        var s = "";
-        var bindings = this.rootBinding.children;
-        for (var i in bindings) {
-            if (bindings.hasOwnProperty(i)) {
-                s += "-" + bindings[i].toString() + "\n";
-            }
-        }
-        return s;
+    createAccessor(expression: string): Function {
+        return new Function("model", "return model['" + expression + "'];" );
     }
 }
 
-export class Node {
-    private children: Node[] = [];
+export class Map<T> {
+    private items = {};
+    public keys: string[] = [];
 
-    public constructor(public key: string) {
+    add(key: string, child: T) {
+        this.items[key] = child;
+        this.keys.push(key);
     }
 
-    add(child: Node) {
-        this.children.push(child);
+    get(key: string) {
+        return this.items[key];
     }
 
-    visit(visitor: Function) {
-        for (var i = 0; i < this.children.length; i++) {
-            var child = this.children[i];
-            visitor(child);
-            child.visit(visitor);
-        }
+    get length() {
+        return this.keys.length;
     }
 }

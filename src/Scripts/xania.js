@@ -54,10 +54,9 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
     })(DomElement);
     exports.DomTest = DomTest;
     var Binding = (function () {
-        function Binding(property) {
-            if (property === void 0) { property = null; }
-            this.property = property;
-            this.children = [];
+        function Binding(accessor) {
+            this.accessor = accessor;
+            this.children = new Map();
             this.elements = [];
             this.value = null;
         }
@@ -65,29 +64,24 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             if (this.value === newValue) {
                 return;
             }
-            this.updateValue(newValue);
+            this.value = newValue;
+            this.invalidate();
             this.updateChildren(newValue);
             if (!!newValue && this.children.length > 0) {
                 var o = Object;
                 var self = this;
-                o.observe(newValue, function (changes) {
+                o.observe(newValue, function () {
                     self.updateChildren(newValue);
                 }, ["update"]);
             }
         };
-        Binding.prototype.updateValue = function (newValue) {
-            if (this.value !== newValue) {
-                this.value = newValue;
-                this.invalidate();
-                return true;
-            }
-            return false;
-        };
         Binding.prototype.updateChildren = function (newValue) {
             for (var i = 0; i < this.children.length; i++) {
-                var child = this.children[i];
+                var key = this.children.keys[i];
+                var child = this.children.get(key);
                 if (!!newValue) {
-                    child.update(newValue[child.property]);
+                    var childValue = child.accessor(newValue);
+                    child.update(childValue);
                 }
                 else {
                     child.update(null);
@@ -107,7 +101,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         function Binder(templateEngine) {
             if (templateEngine === void 0) { templateEngine = new engine.TemplateEngine(); }
             this.templateEngine = templateEngine;
-            this.rootBinding = new Binding();
+            this.rootBinding = new Binding(function () { return null; });
             this.elements = [];
         }
         Binder.prototype.bind = function (root) {
@@ -118,25 +112,25 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             });
             var domStack = [{ dom: this.root, scope: [] }];
             while (domStack.length > 0) {
-                var item = domStack.pop();
-                var dom = item.dom;
-                var scope = item.scope;
-                var childScope = scope.slice(0);
-                if (dom.attributes['[model]']) {
-                    Array.prototype.push.apply(childScope, dom.attributes['[model]'].value.split("."));
+                var current = domStack.pop();
+                var dom = current.dom;
+                var childScope = current.scope.slice(0);
+                if (dom.attributes["data-model"]) {
+                    Array.prototype.push.apply(childScope, dom.attributes["data-model"].value.split("."));
                 }
-                this.performConventions(dom);
-                for (var i = 0; i < dom.attributes.length; i++) {
+                this.performConventions(current.scope, dom);
+                var i = void 0;
+                for (i = 0; i < dom.attributes.length; i++) {
                     var attribute = dom.attributes[i];
-                    this.compileTemplate(attribute.value, scope, function (tpl) { return new DomAttribute(attribute, tpl); });
+                    this.compileTemplate(attribute.value, current.scope, function (tpl) { return new DomAttribute(attribute, tpl); });
                 }
-                for (var i = 0; i < dom.childNodes.length; i++) {
+                for (i = 0; i < dom.childNodes.length; i++) {
                     var child = dom.childNodes[i];
                     if (child.nodeType === 1) {
                         domStack.push({ dom: child, scope: childScope });
                     }
                     else if (child.nodeType === 3) {
-                        this.compileTemplate(child.textContent, scope, function (tpl) { return new DomText(child, tpl); });
+                        this.compileTemplate(child.textContent, current.scope, function (tpl) { return new DomText(child, tpl); });
                     }
                 }
             }
@@ -156,45 +150,47 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                 this.elements.push(domElement);
             }
         };
-        Binder.prototype.performConventions = function (dom) {
+        Binder.prototype.performConventions = function (scope, dom) {
             var _this = this;
-            if (dom.tagName === "INPUT" && dom.name) {
+            if (dom.tagName === "INPUT" && dom.attributes["data-name"]) {
+                var name = dom.attributes["data-name"].value;
                 if (!dom.value) {
                     var valueAttribute = document.createAttribute("value");
-                    valueAttribute.value = "{{" + dom.name + "}}";
+                    valueAttribute.value = "{{" + name + "}}";
                     dom.setAttributeNode(valueAttribute);
                 }
                 dom.addEventListener("change", function (event) {
-                    var path = event.target.name.split(".");
+                    var path = scope.concat(name.split("."));
                     _this.update(path, event.target.value);
                     _this.updateDom();
                 });
             }
         };
         Binder.prototype.update = function (path, model) {
-            if (!path || path.length == 0) {
+            if (!path || path.length === 0) {
                 this.rootBinding.updateChildren(model);
             }
             else {
                 var children = this.rootBinding.children;
-                for (var i = 0, e = 0; e < path.length && i < children.length;) {
-                    var b = children[i];
-                    if (b.property == path[e]) {
-                        e++;
-                        if (e === path.length) {
+                for (var e = 0; e < path.length; e++) {
+                    var b = children.get(path[e]);
+                    if (!!b) {
+                        if ((e + 1) === path.length) {
                             b.update(model);
                             break;
                         }
                         children = b.children;
-                        i = 0;
                     }
                     else {
-                        i++;
+                        break;
                     }
                 }
             }
             return this;
         };
+        /**
+         * @returns number of affected records
+         */
         Binder.prototype.updateDom = function () {
             var count = 0;
             for (var i = 0; i < this.elements.length; i++) {
@@ -205,59 +201,54 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                     count++;
                 }
             }
-            // if (count > 0)
-            // console.log('count of dom updates', count);
+            return count;
         };
         Binder.prototype.parseBinding = function (path, offset, target) {
             var property = path[offset];
-            for (var j = 0; j < target.length; j++) {
-                if (property === target[j].property) {
-                    var targetBinding = target[j];
-                    if ((offset + 1) < path.length)
-                        return this.parseBinding(path, offset + 1, targetBinding.children);
-                    else
-                        return targetBinding;
-                }
+            var targetBinding = target.get(property);
+            if (!!targetBinding) {
+                if ((offset + 1) < path.length)
+                    return this.parseBinding(path, offset + 1, targetBinding.children);
+                else
+                    return targetBinding;
             }
-            var parent = new Binding(property);
-            target.push(parent);
+            var parent = new Binding(this.createAccessor(property));
+            target.add(property, parent);
             for (var i = offset + 1; i < path.length; i++) {
-                var child = new Binding(path[i]);
-                parent.children.push(child);
+                var p = path[i];
+                var child = new Binding(this.createAccessor(path[i]));
+                parent.children.add(p, child);
                 parent = child;
             }
             return parent;
         };
-        Binder.prototype.toString = function () {
-            var s = "";
-            var bindings = this.rootBinding.children;
-            for (var i in bindings) {
-                if (bindings.hasOwnProperty(i)) {
-                    s += "-" + bindings[i].toString() + "\n";
-                }
-            }
-            return s;
+        Binder.prototype.createAccessor = function (expression) {
+            return new Function("model", "return model['" + expression + "'];");
         };
         return Binder;
     })();
     exports.Binder = Binder;
-    var Node = (function () {
-        function Node(key) {
-            this.key = key;
-            this.children = [];
+    var Map = (function () {
+        function Map() {
+            this.items = {};
+            this.keys = [];
         }
-        Node.prototype.add = function (child) {
-            this.children.push(child);
+        Map.prototype.add = function (key, child) {
+            this.items[key] = child;
+            this.keys.push(key);
         };
-        Node.prototype.visit = function (visitor) {
-            for (var i = 0; i < this.children.length; i++) {
-                var child = this.children[i];
-                visitor(child);
-                child.visit(visitor);
-            }
+        Map.prototype.get = function (key) {
+            return this.items[key];
         };
-        return Node;
+        Object.defineProperty(Map.prototype, "length", {
+            get: function () {
+                return this.keys.length;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        return Map;
     })();
-    exports.Node = Node;
+    exports.Map = Map;
 });
 //# sourceMappingURL=xania.js.map
