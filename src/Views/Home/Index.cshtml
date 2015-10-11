@@ -1,7 +1,7 @@
 ﻿@{
     Layout = null;
-    int days = 10;
-    int hours = 10;
+    const int days = 10;
+    const int hours = 10;
 }
 
 <!DOCTYPE html>
@@ -13,15 +13,11 @@
         var model = null;
         var binder = null;
 
-        function updateCell(d, h) {
-            model.setCell(d, h, Math.random());
-            window.requestAnimationFrame(binder.updateDom.bind(binder));
-        }
-
         function step() {
             for (var d = 0; d < @days; d++) {
                 for (var h = 0; h < @hours; h++) {
-                    updateCell(d, h);
+                    model.setCell(d, h, Math.random());
+                    window.requestAnimationFrame(binder.updateDom.bind(binder));
                 }
             }
         }
@@ -101,7 +97,7 @@
 
 @helper CalendarCell(int day, int hour)
 {
-    <div onclick="updateCell(@day, @hour)" class="{{@(day).@(hour).cellClass}}" data-model="@(day).@(hour)">
+    <div onclick="{{updateCell}}" class="{{cellClass}}" data-model="@(day).@(hour)">
         @* ReSharper disable CssNotResolved *@
         <div style="{{style.showHour}}" class="time">
             {{hours}}:00

@@ -24,7 +24,18 @@ export class DomText extends DomElement {
 
 export class DomAttribute extends DomElement {
     update() {
-        this.dom.nodeValue = this.render();
+        var name: string = this.dom.name;
+        if (!name.match(/^on/i))
+            this.dom.nodeValue = this.render();
+        else {
+            var eventName = name.substring(2);
+            this.dom.ownerElement.addEventListener(eventName, () => {
+                for (var i = 0; i < this.bindings.length; i++) {
+                    var binding = this.bindings[i];
+                    binding.value();
+                }
+            });
+        }
     }
 }
 
@@ -107,18 +118,18 @@ export class Binder {
                 Array.prototype.push.apply(childScope, dom.attributes["data-model"].value.split("."));
             }
 
-            this.performConventions(current.scope, dom);
-            let i: number;
+            this.performConventions(childScope, dom);
+            var i: number;
             for (i = 0; i < dom.attributes.length; i++) {
                 var attribute = dom.attributes[i];
-                this.compileTemplate(attribute.value, current.scope, tpl => new DomAttribute(attribute, tpl));
+                this.compileTemplate(attribute.value, childScope, tpl => new DomAttribute(attribute, tpl));
             }
             for (i = 0; i < dom.childNodes.length; i++) {
                 var child = dom.childNodes[i];
                 if (child.nodeType === 1) {
                     domStack.push({ dom: child, scope: childScope});
                 } else if (child.nodeType === 3) {
-                    this.compileTemplate(child.textContent, current.scope, tpl => new DomText(child, tpl));
+                    this.compileTemplate(child.textContent, childScope, tpl => new DomText(child, tpl));
                 }
             }
         }
@@ -218,6 +229,8 @@ export class Binder {
     }
 
     createAccessor(expression: string): Function {
+        if (expression == "updateCell")
+            return new Function("model", "return model['" + expression + "'].bind(model);");
         return new Function("model", "return model['" + expression + "'];" );
     }
 }

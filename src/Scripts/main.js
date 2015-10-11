@@ -79,6 +79,9 @@ define(["require", "exports", "xania"], function (require, exports, Xania) {
             enumerable: true,
             configurable: true
         });
+        Cell.prototype.updateCell = function () {
+            this.setResults(Math.random());
+        };
         return Cell;
     })();
     exports.Cell = Cell;

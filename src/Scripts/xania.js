@@ -37,7 +37,19 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             _super.apply(this, arguments);
         }
         DomAttribute.prototype.update = function () {
-            this.dom.nodeValue = this.render();
+            var _this = this;
+            var name = this.dom.name;
+            if (!name.match(/^on/i))
+                this.dom.nodeValue = this.render();
+            else {
+                var eventName = name.substring(2);
+                this.dom.ownerElement.addEventListener(eventName, function () {
+                    for (var i = 0; i < _this.bindings.length; i++) {
+                        var binding = _this.bindings[i];
+                        binding.value();
+                    }
+                });
+            }
         };
         return DomAttribute;
     })(DomElement);
@@ -117,11 +129,11 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                 if (dom.attributes["data-model"]) {
                     Array.prototype.push.apply(childScope, dom.attributes["data-model"].value.split("."));
                 }
-                this.performConventions(current.scope, dom);
-                var i = void 0;
+                this.performConventions(childScope, dom);
+                var i;
                 for (i = 0; i < dom.attributes.length; i++) {
                     var attribute = dom.attributes[i];
-                    this.compileTemplate(attribute.value, current.scope, function (tpl) { return new DomAttribute(attribute, tpl); });
+                    this.compileTemplate(attribute.value, childScope, function (tpl) { return new DomAttribute(attribute, tpl); });
                 }
                 for (i = 0; i < dom.childNodes.length; i++) {
                     var child = dom.childNodes[i];
@@ -129,7 +141,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                         domStack.push({ dom: child, scope: childScope });
                     }
                     else if (child.nodeType === 3) {
-                        this.compileTemplate(child.textContent, current.scope, function (tpl) { return new DomText(child, tpl); });
+                        this.compileTemplate(child.textContent, childScope, function (tpl) { return new DomText(child, tpl); });
                     }
                 }
             }
@@ -222,6 +234,8 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             return parent;
         };
         Binder.prototype.createAccessor = function (expression) {
+            if (expression == "updateCell")
+                return new Function("model", "return model['" + expression + "'].bind(model);");
             return new Function("model", "return model['" + expression + "'];");
         };
         return Binder;

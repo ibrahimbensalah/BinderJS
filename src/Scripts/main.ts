@@ -80,4 +80,8 @@ export class Cell {
             }
         }
     }
+
+    updateCell() {
+        this.setResults(Math.random());
+    }
 }
