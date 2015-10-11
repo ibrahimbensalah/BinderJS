@@ -241,5 +241,23 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         return Binder;
     })();
     exports.Binder = Binder;
+    var Node = (function () {
+        function Node(key) {
+            this.key = key;
+            this.children = [];
+        }
+        Node.prototype.add = function (child) {
+            this.children.push(child);
+        };
+        Node.prototype.visit = function (visitor) {
+            for (var i = 0; i < this.children.length; i++) {
+                var child = this.children[i];
+                visitor(child);
+                child.visit(visitor);
+            }
+        };
+        return Node;
+    })();
+    exports.Node = Node;
 });
 //# sourceMappingURL=xania.js.map

@@ -235,3 +235,22 @@ export class Binder {
         return s;
     }
 }
+
+export class Node {
+    private children: Node[] = [];
+
+    public constructor(public key: string) {
+    }
+
+    add(child: Node) {
+        this.children.push(child);
+    }
+
+    visit(visitor: Function) {
+        for (var i = 0; i < this.children.length; i++) {
+            var child = this.children[i];
+            visitor(child);
+            child.visit(visitor);
+        }
+    }
+}
