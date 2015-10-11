@@ -1,7 +1,7 @@
 ﻿@{
     Layout = null;
-    int days = 16;
-    int hours = 16;
+    int days = 31;
+    int hours = 24;
 }
 
 <!DOCTYPE html>
@@ -9,26 +9,21 @@
 <head>
     <title>Xania Binding Lab</title>
     <link href="~/Content/calendar.css" rel="stylesheet" />
-    <!-- data-main attribute tells require.js to load
-    scripts/main.js after require.js loads. -->
     <script>
         var model = null;
         var binder = null;
 
-        function cellClicked(d, h) {
-            binder.set([d.toString(), h.toString()], model.getCell(d, h, Math.random()));
+        function updateCell(d, h) {
+            model.setCell(d, h, Math.random());
         }
 
         function step() {
             for (var d = 0; d < @days; d++) {
                 for (var h = 0; h < @hours; h++) {
-                    // cellClicked(d, h);
-                    binder.set([d.toString(), h.toString()], model.getCell(d, h, Math.random()));
+                    updateCell(d, h);
                     window.requestAnimationFrame(binder.updateDom.bind(binder));
                 }
             }
-            // binder.update(model);
-            // window.requestAnimationFrame(binder.updateDom.bind(binder));
         }
 
         function startAnimation() {
@@ -69,6 +64,14 @@
                 </th>
             }
         </tr>
+        <tr>
+            @for (var day = 0; day < days; day++)
+            {
+                <td class="hour-cell">
+                    @CalendarCell(day, 0)
+                </td>
+            }
+        </tr>
         @for (var h = 0; h < hours; h++)
         {
             <tr>
@@ -83,20 +86,22 @@
     </table>
 </div>
 
-    <div id="container">
-        <input type="text" name="person.firstName" />
-        <input type="text" name="person.lastName" />
+    <div id="container" [model]="person">
+        <input type="text" name="firstName" />
+        <input type="text" name="lastName" />
 
-        <p>{{person.firstName}} {{person.lastName}}</p>
-        <p>{{person.lastName}} {{person.firstName}}</p>
-        <p>{{person.firstName}}</p>
+        <p>{{firstName}} {{lastName}}</p>
+        <p>{{lastName}} {{firstName}}</p>
+        <p>{{firstName}}</p>
     </div>
     <script data-main="scripts/main" src="~/scripts/require.js"></script>
     <script>
         require(['main', 'xania'], function (main, xn) {
             model = new main.Calendar();
             binder = new xn.Binder()
-                .bind(document.getElementById("calendar"), model);
+                .bind(document.getElementById("calendar"));
+            step();
+            binder.update([], model);
         });
     </script>
 </body>
@@ -104,16 +109,16 @@
 
 @helper CalendarCell(int day, int hour)
 {
-    <div onclick="cellClicked(@day, @hour)" class="{{@(day).@(hour).cellClass}}">
+    <div onclick="updateCell(@day, @hour)" class="{{@(day).@(hour).cellClass}}" [model]="@(day).@(hour)">
         @* ReSharper disable CssNotResolved *@
-        <div style="{{@(day).@(hour).style.showHour}}" class="time">
-            {{@(day).@(hour).hours}}:00
+        <div style="{{style.showHour}}" class="time">
+            {{hours}}:00
         </div>
-        <div style="{{@(day).@(hour).style.showSpinner}}">
+        <div style="{{style.showSpinner}}">
             ...
         </div>
-        <div style="{{@(day).@(hour).style.showSearchResults}}">
-            <div>{{@(day).@(hour).status.searchResults.options}}</div>
+        <div style="{{style.showSearchResults}}">
+            <div>{{status.searchResults.options}}</div>
             <div class="result-label">results</div>
         </div>
         @* ReSharper restore CssNotResolved *@

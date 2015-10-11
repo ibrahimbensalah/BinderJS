@@ -3,21 +3,22 @@
 var personBinder = new Xania.Binder();
 
 personBinder
-    .bind(document.getElementById("container"), {})
-    .update({ person: { firstName: "Ibrahim", lastName: "ben Salah" } })
+    .bind(document.getElementById("container"))
+    .update([], { person: { firstName: "Ibrahim", lastName: "ben Salah" } })
     .updateDom();
 
 
 export class Calendar {
     setCell(day, hour, results) {
-        var cell = new Cell(day, hour);
-        cell.setResults(results);
-
         if (!this[day])
             this[day] = {};
-        this[day][hour] = cell;
+        if (!this[day][hour])
+            this[day][hour] = new Cell(day, hour);
 
-        return this[day][hour];
+        var cell = this[day][hour];
+        cell.setResults(results);
+
+        return cell;
     }
 
     getCell(day, hour, results) {
@@ -33,7 +34,7 @@ export class Cell {
     hour: number;
     style: any;
     status: any = {};
-    isPure: boolean = true;
+    isPure: boolean = false;
 
     constructor(day, hour) {
         this.day = day;

@@ -1,19 +1,20 @@
 define(["require", "exports", "xania"], function (require, exports, Xania) {
     var personBinder = new Xania.Binder();
     personBinder
-        .bind(document.getElementById("container"), {})
-        .update({ person: { firstName: "Ibrahim", lastName: "ben Salah" } })
+        .bind(document.getElementById("container"))
+        .update([], { person: { firstName: "Ibrahim", lastName: "ben Salah" } })
         .updateDom();
     var Calendar = (function () {
         function Calendar() {
         }
         Calendar.prototype.setCell = function (day, hour, results) {
-            var cell = new Cell(day, hour);
-            cell.setResults(results);
             if (!this[day])
                 this[day] = {};
-            this[day][hour] = cell;
-            return this[day][hour];
+            if (!this[day][hour])
+                this[day][hour] = new Cell(day, hour);
+            var cell = this[day][hour];
+            cell.setResults(results);
+            return cell;
         };
         Calendar.prototype.getCell = function (day, hour, results) {
             var cell = new Cell(day, hour);
@@ -26,7 +27,7 @@ define(["require", "exports", "xania"], function (require, exports, Xania) {
     var Cell = (function () {
         function Cell(day, hour) {
             this.status = {};
-            this.isPure = true;
+            this.isPure = false;
             this.day = day;
             this.hour = hour;
             this.style = {

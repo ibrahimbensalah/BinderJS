@@ -21,6 +21,9 @@ define(["require", "exports"], function (require, exports) {
             return model;
         };
         TemplateEngine.prototype.compile = function (template) {
+            if (!template || !template.trim()) {
+                return null;
+            }
             template = template.replace(/\n/g, '\\n');
             var params = [];
             var returnExpr = template.replace(/{{([^}]+)}}/gm, function (a, b) {

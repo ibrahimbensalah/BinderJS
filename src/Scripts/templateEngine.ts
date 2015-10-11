@@ -20,6 +20,10 @@
     }
 
     compile(template) {
+        if (!template || !template.trim()) {
+            return null;
+        }
+
         template = template.replace(/\n/g, '\\n');
         var params = [];
         var returnExpr = template.replace(/{{([^}]+)}}/gm, (a, b) => {

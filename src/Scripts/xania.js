@@ -11,7 +11,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             this.template = template;
             this.isDirty = false;
         }
-        DomElement.prototype.getValue = function () {
+        DomElement.prototype.render = function () {
             var args = this.bindings.map(function (b) { return b.value === null ? '' : b.value; });
             return this.template.apply(this, args);
         };
@@ -26,7 +26,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             _super.apply(this, arguments);
         }
         DomText.prototype.update = function () {
-            this.dom.textContent = this.getValue();
+            this.dom.textContent = this.render();
         };
         return DomText;
     })(DomElement);
@@ -37,7 +37,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             _super.apply(this, arguments);
         }
         DomAttribute.prototype.update = function () {
-            this.dom.nodeValue = this.getValue();
+            this.dom.nodeValue = this.render();
         };
         return DomAttribute;
     })(DomElement);
@@ -49,7 +49,6 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             this.bindings = [];
         }
         DomTest.prototype.update = function () {
-            console.log(_super.prototype.getValue.call(this));
         };
         return DomTest;
     })(DomElement);
@@ -63,11 +62,17 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             this.value = null;
         }
         Binding.prototype.update = function (newValue) {
-            if (this.updateValue(newValue)) {
-                this.updateChildren(newValue);
+            if (this.value === newValue) {
+                return;
             }
-            else if (!newValue || !newValue.isPure) {
-                this.updateChildren(newValue);
+            this.updateValue(newValue);
+            this.updateChildren(newValue);
+            if (!!newValue && this.children.length > 0) {
+                var o = Object;
+                var self = this;
+                o.observe(newValue, function (changes) {
+                    self.updateChildren(newValue);
+                }, ["update"]);
             }
         };
         Binding.prototype.updateValue = function (newValue) {
@@ -81,7 +86,12 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         Binding.prototype.updateChildren = function (newValue) {
             for (var i = 0; i < this.children.length; i++) {
                 var child = this.children[i];
-                child.update(!!newValue ? newValue[child.property] : null);
+                if (!!newValue) {
+                    child.update(newValue[child.property]);
+                }
+                else {
+                    child.update(null);
+                }
             }
         };
         Binding.prototype.invalidate = function () {
@@ -100,71 +110,78 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             this.rootBinding = new Binding();
             this.elements = [];
         }
-        Binder.prototype.bind = function (root, model) {
+        Binder.prototype.bind = function (root) {
             var _this = this;
             this.root = root;
             this.root.addEventListener("click", function () {
                 _this.updateDom();
             });
-            var stack = [this.root];
-            while (stack.length > 0) {
-                var dom = stack.pop();
+            var domStack = [{ dom: this.root, scope: [] }];
+            while (domStack.length > 0) {
+                var item = domStack.pop();
+                var dom = item.dom;
+                var scope = item.scope;
+                var childScope = scope.slice(0);
+                if (dom.attributes['[model]']) {
+                    Array.prototype.push.apply(childScope, dom.attributes['[model]'].value.split("."));
+                }
                 this.performConventions(dom);
                 for (var i = 0; i < dom.attributes.length; i++) {
                     var attribute = dom.attributes[i];
-                    this.compileTemplate(attribute.value, function (tpl) { return new DomAttribute(attribute, tpl); });
+                    this.compileTemplate(attribute.value, scope, function (tpl) { return new DomAttribute(attribute, tpl); });
                 }
                 for (var i = 0; i < dom.childNodes.length; i++) {
                     var child = dom.childNodes[i];
                     if (child.nodeType === 1) {
-                        stack.push(child);
+                        domStack.push({ dom: child, scope: childScope });
                     }
                     else if (child.nodeType === 3) {
-                        this.compileTemplate(child.textContent, function (tpl) { return new DomText(child, tpl); });
+                        this.compileTemplate(child.textContent, scope, function (tpl) { return new DomText(child, tpl); });
                     }
                 }
             }
             return this;
         };
-        Binder.prototype.compileTemplate = function (template, factory) {
-            if (template && template.trim()) {
-                var compiled = this.templateEngine.compile(template);
-                if (compiled) {
-                    var domElement = factory(compiled.func);
-                    this.bindDom(domElement, compiled.params);
-                }
+        Binder.prototype.compileTemplate = function (template, scope, factory) {
+            var _this = this;
+            var compiled = this.templateEngine.compile(template);
+            if (compiled) {
+                var domElement = factory(compiled.func);
+                domElement.bindings = compiled.params.map(function (param) {
+                    var bindingScope = scope.concat(param.split("."));
+                    var b = _this.parseBinding(bindingScope, 0, _this.rootBinding.children);
+                    b.elements.push(domElement);
+                    return b;
+                });
+                this.elements.push(domElement);
             }
         };
         Binder.prototype.performConventions = function (dom) {
             var _this = this;
             if (dom.tagName === "INPUT" && dom.name) {
-                //if (!dom.value) {
-                //    var valueAttribute = document.createAttribute("value");
-                //    valueAttribute.value = "{{" + dom.name + "}}";
-                //    dom.setAttributeNode(valueAttribute);
-                //}
+                if (!dom.value) {
+                    var valueAttribute = document.createAttribute("value");
+                    valueAttribute.value = "{{" + dom.name + "}}";
+                    dom.setAttributeNode(valueAttribute);
+                }
                 dom.addEventListener("change", function (event) {
                     var path = event.target.name.split(".");
-                    _this.set(path, event.target.value);
+                    _this.update(path, event.target.value);
                     _this.updateDom();
                 });
             }
         };
-        Binder.prototype.update = function (model) {
-            this.rootBinding.updateChildren(model);
-            return this;
-        };
-        Binder.prototype.set = function (path, model) {
-            var children = this.rootBinding.children;
+        Binder.prototype.update = function (path, model) {
             if (!path || path.length == 0) {
-                this.update(model);
+                this.rootBinding.updateChildren(model);
             }
             else {
+                var children = this.rootBinding.children;
                 for (var i = 0, e = 0; e < path.length && i < children.length;) {
                     var b = children[i];
                     if (b.property == path[e]) {
                         e++;
-                        if (e == path.length) {
+                        if (e === path.length) {
                             b.update(model);
                             break;
                         }
@@ -179,13 +196,17 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             return this;
         };
         Binder.prototype.updateDom = function () {
+            var count = 0;
             for (var i = 0; i < this.elements.length; i++) {
                 var elt = this.elements[i];
                 if (elt.isDirty) {
                     elt.update();
                     elt.isDirty = false;
+                    count++;
                 }
             }
+            // if (count > 0)
+            // console.log('count of dom updates', count);
         };
         Binder.prototype.parseBinding = function (path, offset, target) {
             var property = path[offset];
@@ -207,10 +228,6 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             }
             return parent;
         };
-        Binder.prototype.getValue = function (dom) {
-            var args = dom.bindings.map(function (b) { return b.value; });
-            return dom.template.apply(this, args);
-        };
         Binder.prototype.toString = function () {
             var s = "";
             var bindings = this.rootBinding.children;
@@ -220,15 +237,6 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                 }
             }
             return s;
-        };
-        Binder.prototype.bindDom = function (domElement, params) {
-            var _this = this;
-            domElement.bindings = params.map(function (param) {
-                var b = _this.parseBinding(param.split('.'), 0, _this.rootBinding.children);
-                b.elements.push(domElement);
-                return b;
-            });
-            this.elements.push(domElement);
         };
         return Binder;
     })();
