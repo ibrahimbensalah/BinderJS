@@ -1,7 +1,7 @@
 ﻿@{
     Layout = null;
-    const int days = 5;
-    const int hours = 5;
+    const int days = 2;
+    const int hours = 1;
 }
 
 <!DOCTYPE html>
@@ -16,14 +16,15 @@
         function step() {
             for (var d = 0; d < @days  ; d++) {
                 for (var h = 0; h < @hours ; h++) {
-                    model.setCell(d, h, Math.random());
-                    window.requestAnimationFrame(binder.updateDom.bind(binder));
+                    model.setCell(h, d, Math.random());
                 }
             }
+            window.requestAnimationFrame(binder.updateDom.bind(binder));
         }
 
         function startAnimation() {
-            setInterval(step, 16);
+            step();
+            setTimeout(startAnimation, 24);
         }
 
         var measures = [];
@@ -64,13 +65,13 @@
     <script>
         require(['main', 'xania'], function(main, xn) {
             model = new main.Calendar();
-            
+
             var template = document.getElementById("calendarTemplate");
             var table = document.importNode(template.content, true);
-            
+
             binder = new xn.Binder()
                 .bind(table);
-            
+
             var host = document.getElementById("calendar");
             host.appendChild(table);
 
@@ -106,7 +107,7 @@
                 </td>
             </tr>
         </table>
-</template>
+    </template>
 </body>
 </html>
 

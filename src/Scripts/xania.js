@@ -49,7 +49,6 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                     owner.addEventListener(eventName, function () {
                         for (var i = 0; i < _this.bindings.length; i++) {
                             var binding = _this.bindings[i];
-                            binding.value();
                         }
                     });
                 }
@@ -70,43 +69,14 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
     })(DomElement);
     exports.DomTest = DomTest;
     var Binding = (function () {
-        function Binding(parent, accessor) {
+        function Binding(parent, accessor, scope) {
             this.parent = parent;
             this.accessor = accessor;
+            this.scope = scope;
             this.children = new Map();
             this.elements = [];
             this.value = null;
         }
-        Binding.prototype.update = function (newValue) {
-            if (this.value === newValue) {
-                return;
-            }
-            this.value = newValue;
-            this.invalidate();
-            this.updateChildren(newValue);
-            if (!!newValue && typeof newValue === "object") {
-                var o = Object;
-                o.observe(newValue, this.dispatch.bind(this), ['update', 'add']);
-            }
-        };
-        Binding.prototype.dispatch = function () {
-            this.updateChildren(this.value);
-            if (this.parent != null) {
-                this.parent.dispatch();
-            }
-        };
-        Binding.prototype.updateChildren = function (newValue) {
-            for (var i = 0; i < this.children.length; i++) {
-                var child = this.children.elementAt(i);
-                if (!!newValue) {
-                    var childValue = child.accessor(newValue);
-                    child.update(childValue);
-                }
-                else {
-                    child.update(null);
-                }
-            }
-        };
         Binding.prototype.invalidate = function () {
             for (var i = 0; i < this.elements.length; i++) {
                 var elt = this.elements[i];
@@ -120,8 +90,9 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         function Binder(templateEngine) {
             if (templateEngine === void 0) { templateEngine = new engine.TemplateEngine(); }
             this.templateEngine = templateEngine;
-            this.rootBinding = new Binding(null, function () { return null; });
+            this.rootBinding = new Binding(null, function (m) { return m; }, []);
             this.elements = [];
+            this.observe = Object.observe;
         }
         Binder.prototype.bind = function (root) {
             var _this = this;
@@ -184,9 +155,40 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                 });
             }
         };
+        Binder.prototype.updateBinding = function (binding, model) {
+            var bindingStack = [{ binding: binding, model: model }];
+            while (bindingStack.length) {
+                var item = bindingStack.pop();
+                var newValue = (!!item.model) ? item.binding.accessor(item.model) : null;
+                if (newValue === undefined) {
+                    this.observe(item.model, this.updateBinding.bind(this, item.binding, item.model), ['add']);
+                }
+                else if (item.binding.value !== newValue) {
+                    item.binding.value = newValue;
+                    item.binding.invalidate();
+                    if (!!newValue && typeof newValue === "object") {
+                        this.observe(newValue, this.dispatch.bind(this, item.binding), ['update']);
+                    }
+                    for (var i = 0; i < item.binding.children.length; i++) {
+                        var childBinding = item.binding.children.elementAt(i);
+                        bindingStack.push({ binding: childBinding, model: newValue });
+                    }
+                }
+            }
+        };
+        Binder.prototype.dispatch = function (binding) {
+            for (var i = 0; i < binding.children.length; i++) {
+                var child = binding.children.elementAt(i);
+                this.updateBinding(child, binding.value);
+            }
+            // binding.updateChildren(binding.value);
+            if (binding.parent != null) {
+                this.dispatch(binding.parent);
+            }
+        };
         Binder.prototype.update = function (path, model) {
             if (!path || path.length === 0) {
-                this.rootBinding.update(model);
+                this.updateBinding(this.rootBinding, model);
             }
             else {
                 var children = this.rootBinding.children;
@@ -194,7 +196,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                     var b = children.get(path[e]);
                     if (!!b) {
                         if ((e + 1) === path.length) {
-                            b.update(model);
+                            this.updateBinding(b, model);
                             break;
                         }
                         children = b.children;
@@ -232,14 +234,13 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                 else
                     return targetBinding;
             }
-            var child = new Binding(parent, this.createAccessor(bindingExpr));
-            parent.children.add(bindingExpr, child);
-            parent = child;
-            for (var i = offset + 1; i < path.length; i++) {
+            var i = offset;
+            while (i < path.length) {
                 bindingExpr = path[i];
-                child = new Binding(parent, this.createAccessor(bindingExpr));
+                var child = new Binding(parent, this.createAccessor(bindingExpr), path.slice(0, i));
                 parent.children.add(bindingExpr, child);
                 parent = child;
+                i++;
             }
             return parent;
         };

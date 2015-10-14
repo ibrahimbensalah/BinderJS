@@ -3,17 +3,6 @@ define(["require", "exports"], function (require, exports) {
         function TemplateEngine() {
             this.cacheFn = {};
         }
-        //render(template, model) {
-        //    var args = [];
-        //    for (var i = 0; i < template.params.length; i++) {
-        //        var arg = this.getValue(model, template.params[i]);
-        //        if (typeof (arg) === "undefined" || arg === null)
-        //            args.push("");
-        //        else
-        //            args.push(arg);
-        //    }
-        //    return template.func.apply(this, args);
-        //}
         TemplateEngine.prototype.getValue = function (model, parts) {
             for (var i = 0; i < parts.length && !!model; i++) {
                 model = model[parts[i]];
