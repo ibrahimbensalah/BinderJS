@@ -55,7 +55,7 @@ define(["require", "exports", "xania"], function (require, exports, Xania) {
             };
             this.status = {
                 searchResults: {
-                    options: (this.status.searchResults.options + Math.floor(results * 9)) % 10
+                    options: Math.floor(results * 6) % 6
                 }
             };
         };

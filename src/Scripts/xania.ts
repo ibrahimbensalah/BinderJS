@@ -29,12 +29,16 @@ export class DomAttribute extends DomElement {
             this.dom.nodeValue = this.render();
         else {
             var eventName = name.substring(2);
-            this.dom.ownerElement.addEventListener(eventName, () => {
-                for (var i = 0; i < this.bindings.length; i++) {
-                    var binding = this.bindings[i];
-                    binding.value();
-                }
-            });
+            var owner = this.dom.ownerElement;
+            if (!!owner) {
+                owner.removeAttribute(name);
+                owner.addEventListener(eventName, () => {
+                    for (var i = 0; i < this.bindings.length; i++) {
+                        var binding = this.bindings[i];
+                        binding.value();
+                    }
+                });
+            }
         }
     }
 }
@@ -51,7 +55,7 @@ export class Binding {
     public elements: DomElement[] = [];
     public value = null;
 
-    constructor(public accessor: Function) {
+    constructor(public parent: Binding, public accessor: Function) {
     }
 
     update(newValue: any) {
@@ -63,12 +67,16 @@ export class Binding {
 
         this.updateChildren(newValue);
 
-        if (!!newValue && this.children.length > 0) {
+        if (!!newValue && typeof newValue === "object") {
             var o: any = Object;
-            var self = this;
-            o.observe(newValue, (): void => {
-                self.updateChildren(newValue);
-            }, ["update"]);
+            o.observe(newValue, this.dispatch.bind(this), ['update', 'add']);
+        }
+    }
+
+    private dispatch() {
+        this.updateChildren(this.value);
+        if (this.parent != null) {
+            this.parent.dispatch();
         }
     }
 
@@ -93,34 +101,31 @@ export class Binding {
 }
 
 export class Binder {
-    private rootBinding: Binding = new Binding(() => null);
+    private rootBinding: Binding = new Binding(null, () => null);
     elements: DomElement[] = [];
-    root;
 
     constructor(public templateEngine: engine.TemplateEngine = new engine.TemplateEngine()) {
     }
 
     bind(root: any) {
-        this.root = root;
-
-        this.root.addEventListener("click", () => {
+        root.addEventListener("click", () => {
             this.updateDom();
         });
 
-        var domStack = [{ dom: this.root, scope: [] }];
+        var domStack = [{ dom: root, scope: [] }];
 
         while (domStack.length > 0) {
             var current = domStack.pop();
             var dom = current.dom;
             var childScope = current.scope.slice(0);
 
-            if (dom.attributes["data-model"]) {
+            if (!!dom.attributes && dom.attributes["data-model"]) {
                 Array.prototype.push.apply(childScope, dom.attributes["data-model"].value.split("."));
             }
 
             this.performConventions(childScope, dom);
             var i: number;
-            for (i = 0; i < dom.attributes.length; i++) {
+            for (i = 0; !!dom.attributes && i < dom.attributes.length; i++) {
                 var attribute = dom.attributes[i];
                 this.compileTemplate(attribute.value, childScope, tpl => new DomAttribute(attribute, tpl));
             }
@@ -142,7 +147,7 @@ export class Binder {
             var domElement = factory(compiled.func);
             domElement.bindings = compiled.params.map(param => {
                 var bindingScope = scope.concat(param.split("."));
-                var b = this.parseBinding(bindingScope, 0, this.rootBinding.children);
+                var b = this.parseBinding(bindingScope, 0);
                 b.elements.push(domElement);
                 return b;
             });
@@ -168,7 +173,7 @@ export class Binder {
 
     update(path: string[], model: any): Binder {
         if (!path || path.length === 0) {
-            this.rootBinding.updateChildren(model);
+            this.rootBinding.update(model);
         } else {
             var children = this.rootBinding.children;
 
@@ -202,26 +207,29 @@ export class Binder {
                 count++;
             }
         }
+        // console.log('affected dom elements ', count);
+
         return count;
     }
 
-    parseBinding(path: string[], offset: number, target: Map<Binding>): Binding {
-        var property = path[offset];
-        var targetBinding = target.get(property);
+    parseBinding(path: string[], offset: number, parent: Binding = this.rootBinding): Binding {
+        var bindingExpr = path[offset];
+        var targetBinding = parent.children.get(bindingExpr);
         if (!!targetBinding) {
             if ((offset + 1) < path.length)
-                return this.parseBinding(path, offset + 1, targetBinding.children);
+                return this.parseBinding(path, offset + 1, targetBinding);
             else
                 return targetBinding;
         }
 
-        var parent = new Binding(this.createAccessor(property));
-        target.add(property, parent);
+        var child = new Binding(parent, this.createAccessor(bindingExpr));
+        parent.children.add(bindingExpr, child);
+        parent = child;
 
         for (var i = offset + 1; i < path.length; i++) {
-            var p = path[i];
-            var child = new Binding(this.createAccessor(path[i]));
-            parent.children.add(p, child);
+            bindingExpr = path[i];
+            child = new Binding(parent, this.createAccessor(bindingExpr));
+            parent.children.add(bindingExpr, child);
             parent = child;
         }
 
@@ -229,6 +237,8 @@ export class Binder {
     }
 
     createAccessor(expression: string): Function {
+        if (expression == "[]")
+            return new Function("model", "return model;");
         if (expression == "updateCell")
             return new Function("model", "return model['" + expression + "'].bind(model);");
         return new Function("model", "return model['" + expression + "'];" );

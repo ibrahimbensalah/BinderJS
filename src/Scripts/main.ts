@@ -7,7 +7,6 @@ var personBinder = new Xania.Binder();
 //    .update([], { person: { firstName: "Ibrahim", lastName: "ben Salah" } })
 //    .updateDom();
 
-
 export class Calendar {
     setCell(day, hour, results) {
         if (!this[day])
@@ -62,7 +61,7 @@ export class Cell {
 
         this.status = {
             searchResults: {
-                options: (this.status.searchResults.options + Math.floor(results * 9)) % 10
+                options: Math.floor(results * 6) % 6
             }
         }
     }

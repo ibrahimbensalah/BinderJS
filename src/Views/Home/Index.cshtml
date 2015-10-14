@@ -1,7 +1,7 @@
 ﻿@{
     Layout = null;
-    const int days = 10;
-    const int hours = 10;
+    const int days = 5;
+    const int hours = 5;
 }
 
 <!DOCTYPE html>
@@ -14,8 +14,8 @@
         var binder = null;
 
         function step() {
-            for (var d = 0; d < @days; d++) {
-                for (var h = 0; h < @hours; h++) {
+            for (var d = 0; d < @days  ; d++) {
+                for (var h = 0; h < @hours ; h++) {
                     model.setCell(d, h, Math.random());
                     window.requestAnimationFrame(binder.updateDom.bind(binder));
                 }
@@ -50,29 +50,7 @@
     <button onclick="loadAll();">load all</button>
     <button onclick="startAnimation();">start animation</button>
 
-    <div id="calendar">
-        <table>
-            <tr>
-                @for (var day = 0; day < days; day++)
-                {
-                    <th class="day-header">
-                        @(day + 1) Oct
-                    </th>
-                }
-            </tr>
-            @for (var h = 0; h < hours; h++)
-            {
-                <tr>
-                    @for (var day = 0; day < days; day++)
-                    {
-                        <td class="hour-cell">
-                            @CalendarCell(day, h)
-                        </td>
-                    }
-                </tr>
-            }
-        </table>
-    </div>
+    <div id="calendar"></div>
 
     @*<div id="container" data-model="person">
             <input type="text" data-name="firstName" />
@@ -84,14 +62,51 @@
         </div>*@
     <script data-main="scripts/main" src="~/scripts/require.js"></script>
     <script>
-        require(['main', 'xania'], function (main, xn) {
+        require(['main', 'xania'], function(main, xn) {
             model = new main.Calendar();
+            
+            var template = document.getElementById("calendarTemplate");
+            var table = document.importNode(template.content, true);
+            
             binder = new xn.Binder()
-                .bind(document.getElementById("calendar"));
-            step();
+                .bind(table);
+            
+            var host = document.getElementById("calendar");
+            host.appendChild(table);
+
             binder.update([], model);
         });
     </script>
+    <template id="calendarTemplate">
+        <table>
+            <tr>
+                @for (var day = 0; day < days; day++)
+                {
+                    <th class="day-header">
+                        @(day + 1) Oct
+                    </th>
+                }
+            </tr>
+            <tr data-model="0">
+                <td data-model="0">
+                    <div onclick="{{updateCell}}" class="{{cellClass}} ">
+                        @* ReSharper disable CssNotResolved *@
+                        <div style="{{style.showHour}}" class="time">
+                            {{hours}}:00
+                        </div>
+                        <div style="{{style.showSpinner}}">
+                            ...
+                        </div>
+                        <div style="{{style.showSearchResults}}">
+                            <div>{{status.searchResults.options}}</div>
+                            <div class="result-label">results</div>
+                        </div>
+                        @* ReSharper restore CssNotResolved *@
+                    </div>
+                </td>
+            </tr>
+        </table>
+</template>
 </body>
 </html>
 
