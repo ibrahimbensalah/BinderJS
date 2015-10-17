@@ -1,6 +1,6 @@
 ﻿@{
     Layout = null;
-    const int days = 2;
+    const int days = 1;
     const int hours = 1;
 }
 
@@ -17,14 +17,18 @@
             for (var d = 0; d < @days  ; d++) {
                 for (var h = 0; h < @hours ; h++) {
                     model.setCell(h, d, Math.random());
+                    window.requestAnimationFrame(binder.updateDom.bind(binder));
                 }
             }
-            window.requestAnimationFrame(binder.updateDom.bind(binder));
         }
 
         function startAnimation() {
             step();
-            setTimeout(startAnimation, 24);
+            setTimeout(startAnimation, 0);
+        }
+
+        function startInterval() {
+            setInterval(step, 0);
         }
 
         var measures = [];
@@ -50,6 +54,7 @@
 <body>
     <button onclick="loadAll();">load all</button>
     <button onclick="startAnimation();">start animation</button>
+    <button onclick="startInterval();">start interval</button>
 
     <div id="calendar"></div>
 
@@ -89,14 +94,14 @@
                 }
             </tr>
             <tr data-model="0">
-                <td data-model="0">
-                    <div onclick="{{updateCell}}" class="{{cellClass}} ">
+                <td data-model="[]" class="hour-cell">
+                    <div onclick="{{updateCell}}" class="{{cellClass}}">
                         @* ReSharper disable CssNotResolved *@
                         <div style="{{style.showHour}}" class="time">
                             {{hours}}:00
                         </div>
                         <div style="{{style.showSpinner}}">
-                            ...
+                            ...{{style.showSpinner}}
                         </div>
                         <div style="{{style.showSearchResults}}">
                             <div>{{status.searchResults.options}}</div>
@@ -110,21 +115,3 @@
     </template>
 </body>
 </html>
-
-@helper CalendarCell(int day, int hour)
-{
-    <div onclick="{{updateCell}}" class="{{cellClass}}" data-model="@(day).@(hour)">
-        @* ReSharper disable CssNotResolved *@
-        <div style="{{style.showHour}}" class="time">
-            {{hours}}:00
-        </div>
-        <div style="{{style.showSpinner}}">
-            ...
-        </div>
-        <div style="{{style.showSearchResults}}">
-            <div>{{status.searchResults.options}}</div>
-            <div class="result-label">results</div>
-        </div>
-        @* ReSharper restore CssNotResolved *@
-    </div>
-}

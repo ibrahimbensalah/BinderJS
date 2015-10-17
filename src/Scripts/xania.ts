@@ -24,21 +24,30 @@ export class DomText extends DomElement {
 
 export class DomAttribute extends DomElement {
     update() {
+        this.dom.nodeValue = this.render();
+    }
+}
+
+export class DomEvent extends DomElement {
+    constructor(public dom: any, public template: any) {
+        super(dom, template);
+    }
+
+    init() {
         var name: string = this.dom.name;
-        if (!name.match(/^on/i))
-            this.dom.nodeValue = this.render();
-        else {
-            var eventName = name.substring(2);
-            var owner = this.dom.ownerElement;
-            if (!!owner) {
-                owner.removeAttribute(name);
-                owner.addEventListener(eventName, () => {
-                    for (var i = 0; i < this.bindings.length; i++) {
-                        var binding = this.bindings[i];
-                    }
-                });
-            }
+        var eventName = name.substring(2);
+        var owner = this.dom.ownerElement;
+        if (!!owner) {
+            owner.removeAttribute(name);
+            owner.addEventListener(eventName, () => {
+                for (var i = 0; i < this.bindings.length; i++) {
+                    var binding = this.bindings[i];
+                }
+            });
         }
+    }
+
+    update() {
     }
 }
 
@@ -57,10 +66,79 @@ export class Binding {
     constructor(public parent: Binding, public accessor: Function, public scope: any) {
     }
 
+    addChild(key: string, binding: Binding) {
+        binding.parent = this;
+        this.children.add(key, binding);
+    }
+
+    getChild(key: string) {
+        return this.children.get(key);
+    }
+
+    update(model: any) {
+        var newValue = (!!model) ? this.accessor(model) : null;
+        if (newValue === undefined) {
+            (<any>Object).observe(model, this.update.bind(this, model), ['add']);
+        } else if (this.value !== newValue) {
+            this.value = newValue;
+            this.invalidate();
+            if (!!newValue && typeof newValue === "object") {
+                (<any>Object).observe(newValue, this.dispatch.bind(this), ['update']);
+            }
+
+            this.updateChildren();
+        }
+    }
+
+    updateChildren() {
+        for (var i = 0; i < this.children.length; i++) {
+            var childBinding = this.children.elementAt(i);
+            childBinding.update(this.value);
+        }
+    }
+
+    dispatch() {
+        this.updateChildren();
+
+        if (this.parent != null) {
+            this.parent.dispatch();
+        }
+    }
+
     invalidate() {
         for (var i = 0; i < this.elements.length; i++) {
             var elt = this.elements[i];
             elt.isDirty = true;
+        }
+    }
+}
+
+export class ArrayBinding extends Binding {
+    template: Binding;
+
+    constructor(public parent: Binding, public scope: any) {
+        super(parent, new Function("m", "return m;"), scope);
+
+        this.template = new Binding(this, new Function("m", "return m[0];"), ["template"]);
+    }
+
+    addChild(key: string, binding: Binding) {
+        this.template.addChild(key, binding);
+    }
+
+    getChild(key: string) {
+        return this.template.getChild(key);
+    }
+
+    update(model: any) {
+        this.template.update(model);
+    }
+
+    dispatch() {
+        this.template.updateChildren();
+
+        if (this.parent != null) {
+            this.parent.dispatch();
         }
     }
 }
@@ -93,12 +171,16 @@ export class Binder {
             var i: number;
             for (i = 0; !!dom.attributes && i < dom.attributes.length; i++) {
                 var attribute = dom.attributes[i];
-                this.compileTemplate(attribute.value, childScope, tpl => new DomAttribute(attribute, tpl));
+                var name = attribute.name;
+                var typeName = !name.match(/^on/i) ? DomAttribute : DomEvent;
+
+                this.compileTemplate(attribute.value, childScope, tpl => new typeName(attribute, tpl));
+
             }
             for (i = 0; i < dom.childNodes.length; i++) {
                 var child = dom.childNodes[i];
                 if (child.nodeType === 1) {
-                    domStack.push({ dom: child, scope: childScope});
+                    domStack.push({ dom: child, scope: childScope });
                 } else if (child.nodeType === 3) {
                     this.compileTemplate(child.textContent, childScope, tpl => new DomText(child, tpl));
                 }
@@ -137,45 +219,11 @@ export class Binder {
         }
     }
 
-    updateBinding(binding: Binding, model: any) {
-        var bindingStack = [{ binding: binding, model: model }];
-        while (bindingStack.length) {
-            var item = bindingStack.pop();
-            
-            var newValue = (!!item.model) ? item.binding.accessor(item.model) : null;
-            if (newValue === undefined) {
-                this.observe(item.model, this.updateBinding.bind(this, item.binding, item.model), ['add']);
-            }
-            else if (item.binding.value !== newValue) {
-                item.binding.value = newValue;
-                item.binding.invalidate();
-                if (!!newValue && typeof newValue === "object") {
-                    this.observe(newValue, this.dispatch.bind(this, item.binding), ['update']);
-                }
-
-                for (var i = 0; i < item.binding.children.length; i++) {
-                    var childBinding = item.binding.children.elementAt(i);
-                    bindingStack.push({ binding: childBinding, model: newValue });
-                }
-            }
-        }
-    }
-
-    dispatch(binding: Binding) {
-        for (var i = 0; i < binding.children.length; i++) {
-            var child = binding.children.elementAt(i);
-            this.updateBinding(child, binding.value);
-        }
-        // binding.updateChildren(binding.value);
-        if (binding.parent != null) {
-            this.dispatch(binding.parent);
-        }
-    }
-
     update(path: string[], model: any): Binder {
 
+        console.log(model);
         if (!path || path.length === 0) {
-            this.updateBinding(this.rootBinding, model);
+            this.rootBinding.update(model);
         } else {
             var children = this.rootBinding.children;
 
@@ -183,7 +231,7 @@ export class Binder {
                 var b = children.get(path[e]);
                 if (!!b) {
                     if ((e + 1) === path.length) {
-                        this.updateBinding(b, model);
+                        b.update(model);
                         break;
                     }
                     children = b.children;
@@ -203,20 +251,19 @@ export class Binder {
         var count = 0;
         for (var i = 0; i < this.elements.length; i++) {
             var elt = this.elements[i];
-            if (elt.isDirty) {
+            // if (elt.isDirty) {
                 elt.update();
                 elt.isDirty = false;
                 count++;
-            }
+            // }
         }
-        // console.log('affected dom elements ', count);
 
         return count;
     }
 
     parseBinding(path: string[], offset: number, parent: Binding = this.rootBinding): Binding {
         var bindingExpr = path[offset];
-        var targetBinding = parent.children.get(bindingExpr);
+        var targetBinding = parent.getChild(bindingExpr);
         if (!!targetBinding) {
             if ((offset + 1) < path.length)
                 return this.parseBinding(path, offset + 1, targetBinding);
@@ -224,13 +271,17 @@ export class Binder {
                 return targetBinding;
         }
 
-        var i = offset;
-        while (i < path.length) {
+        var child;
+        for (var i = offset; i < path.length; i++) {
             bindingExpr = path[i];
-            var child = new Binding(parent, this.createAccessor(bindingExpr), path.slice(0, i));
-            parent.children.add(bindingExpr, child);
+            if (bindingExpr == "[]") {
+                child = new ArrayBinding(parent, path.slice(0, i));
+            }
+            else
+                child = new Binding(parent, this.createAccessor(bindingExpr), path.slice(0, i));
+
+            parent.addChild(bindingExpr, child);
             parent = child;
-            i++;
         }
 
         return parent;
@@ -238,10 +289,10 @@ export class Binder {
 
     createAccessor(expression: string): Function {
         if (expression == "[]")
-            return new Function("model", "return model;");
+            return new Function("m", "return m;");
         if (expression == "updateCell")
             return new Function("model", "return model['" + expression + "'].bind(model);");
-        return new Function("model", "return model['" + expression + "'];" );
+        return new Function("model", "return model['" + expression + "'];");
     }
 }
 

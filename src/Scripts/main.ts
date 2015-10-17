@@ -39,7 +39,7 @@ export class Cell {
         this.hour = hour;
         this.style = {
             showHour: "",
-            showSpinner: "display: none",
+            showSpinner: "",
             showSearchResults: "display: none"
         };
         this.status = {

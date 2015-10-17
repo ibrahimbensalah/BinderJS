@@ -31,7 +31,7 @@ define(["require", "exports", "xania"], function (require, exports, Xania) {
             this.hour = hour;
             this.style = {
                 showHour: "",
-                showSpinner: "display: none",
+                showSpinner: "",
                 showSearchResults: "display: none"
             };
             this.status = {
