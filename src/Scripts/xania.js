@@ -50,20 +50,20 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             this.template = template;
         }
         DomEvent.prototype.init = function () {
-            var _this = this;
             var name = this.dom.name;
-            var eventName = name.substring(2);
+            this.eventName = name.substring(2);
+        };
+        DomEvent.prototype.update = function () {
+            var _this = this;
             var owner = this.dom.ownerElement;
             if (!!owner) {
                 owner.removeAttribute(name);
-                owner.addEventListener(eventName, function () {
+                owner.addEventListener(this.eventName, function () {
                     for (var i = 0; i < _this.bindings.length; i++) {
                         var binding = _this.bindings[i];
                     }
                 });
             }
-        };
-        DomEvent.prototype.update = function () {
         };
         return DomEvent;
     })(DomElement);
@@ -80,10 +80,9 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
     })(DomElement);
     exports.DomTest = DomTest;
     var Binding = (function () {
-        function Binding(parent, accessor, scope) {
+        function Binding(parent, accessor) {
             this.parent = parent;
             this.accessor = accessor;
-            this.scope = scope;
             this.children = new Map();
             this.elements = [];
             this.value = null;
@@ -95,29 +94,28 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         Binding.prototype.getChild = function (key) {
             return this.children.get(key);
         };
-        Binding.prototype.update = function (model) {
-            var newValue = (!!model) ? this.accessor(model) : null;
-            if (newValue === undefined) {
-                Object.observe(model, this.update.bind(this, model), ['add']);
-            }
-            else if (this.value !== newValue) {
+        Binding.prototype.update = function (newValue) {
+            if (this.value !== newValue) {
                 this.value = newValue;
                 this.invalidate();
-                if (!!newValue && typeof newValue === "object") {
-                    Object.observe(newValue, this.dispatch.bind(this), ['update']);
-                }
                 this.updateChildren();
+                return true;
             }
+            return false;
         };
         Binding.prototype.updateChildren = function () {
             for (var i = 0; i < this.children.length; i++) {
-                var childBinding = this.children.elementAt(i);
-                childBinding.update(this.value);
+                var child = this.children.elementAt(i);
+                this.updateChild(child);
             }
         };
+        Binding.prototype.updateChild = function (child) {
+            var childValue = (!!this.value) ? child.accessor(this.value) : null;
+            child.update(childValue);
+        };
         Binding.prototype.dispatch = function () {
-            this.updateChildren();
             if (this.parent != null) {
+                this.parent.updateChildren();
                 this.parent.dispatch();
             }
         };
@@ -133,10 +131,10 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
     var ArrayBinding = (function (_super) {
         __extends(ArrayBinding, _super);
         function ArrayBinding(parent, scope) {
-            _super.call(this, parent, new Function("m", "return m;"), scope);
+            _super.call(this, parent, new Function("m", "return m;"));
             this.parent = parent;
             this.scope = scope;
-            this.template = new Binding(this, new Function("m", "return m[0];"), ["template"]);
+            this.template = new Binding(this, new Function("m", "return m[0];"));
         }
         ArrayBinding.prototype.addChild = function (key, binding) {
             this.template.addChild(key, binding);
@@ -145,10 +143,17 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             return this.template.getChild(key);
         };
         ArrayBinding.prototype.update = function (model) {
-            this.template.update(model);
+            if (this.value !== model) {
+                this.value = model;
+                this.updateChild(this.template);
+                return true;
+            }
+            return false;
+        };
+        ArrayBinding.prototype.updateChildren = function () {
+            this.template.updateChildren();
         };
         ArrayBinding.prototype.dispatch = function () {
-            this.template.updateChildren();
             if (this.parent != null) {
                 this.parent.dispatch();
             }
@@ -160,7 +165,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         function Binder(templateEngine) {
             if (templateEngine === void 0) { templateEngine = new engine.TemplateEngine(); }
             this.templateEngine = templateEngine;
-            this.rootBinding = new Binding(null, function (m) { return m; }, []);
+            this.rootBinding = new Binding(null, function (m) { return m; });
             this.elements = [];
             this.observe = Object.observe;
         }
@@ -227,25 +232,21 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                 });
             }
         };
-        Binder.prototype.update = function (path, model) {
-            console.log(model);
-            if (!path || path.length === 0) {
-                this.rootBinding.update(model);
+        Binder.prototype.getBinding = function (path) {
+            var result = this.rootBinding;
+            for (var e = 0; e < path.length; e++) {
+                result = result.getChild(path[e]);
+                if (!result) {
+                    return null;
+                }
             }
-            else {
-                var children = this.rootBinding.children;
-                for (var e = 0; e < path.length; e++) {
-                    var b = children.get(path[e]);
-                    if (!!b) {
-                        if ((e + 1) === path.length) {
-                            b.update(model);
-                            break;
-                        }
-                        children = b.children;
-                    }
-                    else {
-                        break;
-                    }
+            return result;
+        };
+        Binder.prototype.update = function (path, model) {
+            var binding = this.getBinding(path);
+            if (!!binding) {
+                if (binding.update(model)) {
+                    binding.dispatch();
                 }
             }
             return this;
@@ -257,10 +258,11 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             var count = 0;
             for (var i = 0; i < this.elements.length; i++) {
                 var elt = this.elements[i];
-                // if (elt.isDirty) {
-                elt.update();
-                elt.isDirty = false;
-                count++;
+                if (elt.isDirty) {
+                    elt.update();
+                    elt.isDirty = false;
+                    count++;
+                }
             }
             return count;
         };
@@ -281,7 +283,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                     child = new ArrayBinding(parent, path.slice(0, i));
                 }
                 else
-                    child = new Binding(parent, this.createAccessor(bindingExpr), path.slice(0, i));
+                    child = new Binding(parent, this.createAccessor(bindingExpr));
                 parent.addChild(bindingExpr, child);
                 parent = child;
             }

@@ -17,18 +17,40 @@
             for (var d = 0; d < @days  ; d++) {
                 for (var h = 0; h < @hours ; h++) {
                     model.setCell(h, d, Math.random());
-                    window.requestAnimationFrame(binder.updateDom.bind(binder));
+                    binder.update([d, "[]"], model[d][h]);
                 }
             }
         }
 
         function startAnimation() {
             step();
+            window.requestAnimationFrame(binder.updateDom.bind(binder));
             setTimeout(startAnimation, 0);
         }
 
         function startInterval() {
             setInterval(step, 0);
+        }
+
+        function startChainRequests() {
+            var pairs = [];
+            for (var d = 0; d < @days  ; d++) {
+                for (var h = 0; h < @hours ; h++) {
+                    pairs.push({ "d": d, "h": h });
+                }
+            }
+            var step = function(i) {
+                var p = pairs[i];
+                model.setCell(p.h, p.d, Math.random());
+
+                binder.update([p.d, "[]", "style"], model[p.h][p.d].style);
+                binder.update([p.d, "[]", "status"], model[p.h][p.d].status);
+                binder.updateDom();
+
+                window.requestAnimationFrame(step.bind(this, ++i % pairs.length));
+            }
+            step(0);
+
         }
 
         var measures = [];
@@ -55,6 +77,7 @@
     <button onclick="loadAll();">load all</button>
     <button onclick="startAnimation();">start animation</button>
     <button onclick="startInterval();">start interval</button>
+    <button onclick="startChainRequests();">start chain</button>
 
     <div id="calendar"></div>
 
@@ -83,6 +106,9 @@
             binder.update([], model);
         });
     </script>
+
+    @* ReSharper disable WrongExpressionStatement *@
+    @* ReSharper disable Html.TagNotResolved *@
     <template id="calendarTemplate">
         <table>
             <tr>
@@ -101,7 +127,7 @@
                             {{hours}}:00
                         </div>
                         <div style="{{style.showSpinner}}">
-                            ...{{style.showSpinner}}
+                            ...
                         </div>
                         <div style="{{style.showSearchResults}}">
                             <div>{{status.searchResults.options}}</div>
@@ -113,5 +139,7 @@
             </tr>
         </table>
     </template>
+    @* ReSharper restore Html.TagNotResolved *@
+    @* ReSharper restore WrongExpressionStatement *@
 </body>
 </html>
