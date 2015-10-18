@@ -2,7 +2,7 @@
 
 export class DomElement {
     bindings: Binding[];
-    isDirty: boolean = false;
+    _isdirty: boolean = false;
 
     constructor(public dom: any, public template: any) {
     }
@@ -13,6 +13,15 @@ export class DomElement {
     }
 
     update() {
+    }
+
+    set isDirty(value: boolean) {
+        this.update();
+        this._isdirty = value;
+    }
+
+    get isDirty(): boolean {
+        return this._isdirty;
     }
 }
 
@@ -63,8 +72,9 @@ export class Binding {
     private children = new Map<Binding>();
     public elements: DomElement[] = [];
     public value = null;
+    public parent: Binding;
 
-    constructor(public parent: Binding, public accessor: Function) {
+    constructor(public accessor: Function) {
     }
 
     addChild(key: string, binding: Binding) {
@@ -117,10 +127,10 @@ export class Binding {
 export class ArrayBinding extends Binding {
     template: Binding;
 
-    constructor(public parent: Binding, public scope: any) {
-        super(parent, new Function("m", "return m;"));
+    constructor() {
+        super(new Function("m", "return m;"));
 
-        this.template = new Binding(this, new Function("m", "return m[0];"));
+        this.template = new Binding(new Function("m", "return m[0];"));
     }
 
     addChild(key: string, binding: Binding) {
@@ -152,20 +162,69 @@ export class ArrayBinding extends Binding {
 
 }
 
+export class TemplateBinding extends Binding {
+
+    private clones: Binder[] = [];
+
+    constructor(public dom: HTMLElement, public scope: string[]) {
+        super(new Function("m", "return m;"));
+    }
+
+    getChild(key: string): Binding {
+        var clone = this.clones[key];
+        if (!!clone)
+            return clone.rootBinding;
+        return null;
+    }
+
+    update(model: any): boolean {
+        // if (this.value !== model) {
+        this.value = model;
+
+        if (!!this.value && !!this.dom.parentElement) {
+            var parent = this.dom.parentElement;
+
+            var keys = Object.keys(this.value);
+            var key: string;
+            var i: number;
+            for (i = this.clones.length; i < keys.length; i++) {
+                key = keys[i];
+                var clone = <HTMLElement>document.importNode(this.dom, true);
+                clone.removeAttribute("data-model");
+
+                var binder = new Binder();
+                this.clones.push(binder);
+
+                binder.bind(clone);
+                binder.update([], this.value[key]);
+
+                parent.appendChild(clone);
+            }
+
+            for (i = 0; i < keys.length; i++) {
+                key = keys[i];
+                this.clones[i].update([], this.value[key]);
+            }
+        }
+
+        return true;
+        //}
+        //return false;
+    }
+}
 export class Binder {
-    private rootBinding: Binding = new Binding(null, (m) => m);
+    private rootBinding: Binding = new Binding((m) => m);
     elements: DomElement[] = [];
-    observe: Function = (<any>Object).observe;
 
     constructor(public templateEngine: engine.TemplateEngine = new engine.TemplateEngine()) {
     }
 
-    bind(root: any) {
+    bind(root: HTMLElement) {
         root.addEventListener("click", () => {
             this.updateDom();
         });
 
-        var domStack = [{ dom: root, scope: [] }];
+        var domStack = [{ dom: root, scope: [], binding: this.rootBinding }];
 
         while (domStack.length > 0) {
             var current = domStack.pop();
@@ -173,7 +232,15 @@ export class Binder {
             var childScope = current.scope.slice(0);
 
             if (!!dom.attributes && dom.attributes["data-model"]) {
-                Array.prototype.push.apply(childScope, dom.attributes["data-model"].value.split("."));
+                var modelExpression = dom.attributes["data-model"].value.split(".");
+                if (modelExpression.indexOf("[]") >= 0) {
+                    var parent = this.parseBinding(current.scope, 0);
+                    parent.addChild("*", new TemplateBinding(dom, modelExpression));
+                    console.log(this.rootBinding);
+                    continue;
+                }
+
+                Array.prototype.push.apply(childScope, modelExpression);
             }
 
             this.performConventions(childScope, dom);
@@ -187,9 +254,9 @@ export class Binder {
 
             }
             for (i = 0; i < dom.childNodes.length; i++) {
-                var child = dom.childNodes[i];
+                var child: Node = dom.childNodes[i];
                 if (child.nodeType === 1) {
-                    domStack.push({ dom: child, scope: childScope });
+                    domStack.push({ dom: <HTMLElement>child, scope: childScope, binding: current.binding });
                 } else if (child.nodeType === 3) {
                     this.compileTemplate(child.textContent, childScope, tpl => new DomText(child, tpl));
                 }
@@ -281,10 +348,10 @@ export class Binder {
         for (var i = offset; i < path.length; i++) {
             bindingExpr = path[i];
             if (bindingExpr == "[]") {
-                child = new ArrayBinding(parent, path.slice(0, i));
+                child = new ArrayBinding();
             }
             else
-                child = new Binding(parent, this.createAccessor(bindingExpr));
+                child = new Binding(this.createAccessor(bindingExpr));
 
             parent.addChild(bindingExpr, child);
             parent = child;

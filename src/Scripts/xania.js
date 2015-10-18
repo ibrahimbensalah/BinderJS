@@ -9,7 +9,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         function DomElement(dom, template) {
             this.dom = dom;
             this.template = template;
-            this.isDirty = false;
+            this._isdirty = false;
         }
         DomElement.prototype.render = function () {
             var args = this.bindings.map(function (b) { return b.value === null ? '' : b.value; });
@@ -17,6 +17,17 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         };
         DomElement.prototype.update = function () {
         };
+        Object.defineProperty(DomElement.prototype, "isDirty", {
+            get: function () {
+                return this._isdirty;
+            },
+            set: function (value) {
+                this.update();
+                this._isdirty = value;
+            },
+            enumerable: true,
+            configurable: true
+        });
         return DomElement;
     })();
     exports.DomElement = DomElement;
@@ -80,8 +91,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
     })(DomElement);
     exports.DomTest = DomTest;
     var Binding = (function () {
-        function Binding(parent, accessor) {
-            this.parent = parent;
+        function Binding(accessor) {
             this.accessor = accessor;
             this.children = new Map();
             this.elements = [];
@@ -130,11 +140,9 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
     exports.Binding = Binding;
     var ArrayBinding = (function (_super) {
         __extends(ArrayBinding, _super);
-        function ArrayBinding(parent, scope) {
-            _super.call(this, parent, new Function("m", "return m;"));
-            this.parent = parent;
-            this.scope = scope;
-            this.template = new Binding(this, new Function("m", "return m[0];"));
+        function ArrayBinding() {
+            _super.call(this, new Function("m", "return m;"));
+            this.template = new Binding(new Function("m", "return m[0];"));
         }
         ArrayBinding.prototype.addChild = function (key, binding) {
             this.template.addChild(key, binding);
@@ -161,26 +169,76 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         return ArrayBinding;
     })(Binding);
     exports.ArrayBinding = ArrayBinding;
+    var TemplateBinding = (function (_super) {
+        __extends(TemplateBinding, _super);
+        function TemplateBinding(dom, scope) {
+            _super.call(this, new Function("m", "return m;"));
+            this.dom = dom;
+            this.scope = scope;
+            this.clones = [];
+        }
+        TemplateBinding.prototype.getChild = function (key) {
+            var clone = this.clones[key];
+            if (!!clone)
+                return clone.rootBinding;
+            return null;
+        };
+        TemplateBinding.prototype.update = function (model) {
+            // if (this.value !== model) {
+            this.value = model;
+            if (!!this.value && !!this.dom.parentElement) {
+                var parent = this.dom.parentElement;
+                var keys = Object.keys(this.value);
+                var key;
+                var i;
+                for (i = this.clones.length; i < keys.length; i++) {
+                    key = keys[i];
+                    var clone = document.importNode(this.dom, true);
+                    clone.removeAttribute("data-model");
+                    var binder = new Binder();
+                    this.clones.push(binder);
+                    binder.bind(clone);
+                    binder.update([], this.value[key]);
+                    parent.appendChild(clone);
+                }
+                for (i = 0; i < keys.length; i++) {
+                    key = keys[i];
+                    this.clones[i].update([], this.value[key]);
+                }
+            }
+            return true;
+            //}
+            //return false;
+        };
+        return TemplateBinding;
+    })(Binding);
+    exports.TemplateBinding = TemplateBinding;
     var Binder = (function () {
         function Binder(templateEngine) {
             if (templateEngine === void 0) { templateEngine = new engine.TemplateEngine(); }
             this.templateEngine = templateEngine;
-            this.rootBinding = new Binding(null, function (m) { return m; });
+            this.rootBinding = new Binding(function (m) { return m; });
             this.elements = [];
-            this.observe = Object.observe;
         }
         Binder.prototype.bind = function (root) {
             var _this = this;
             root.addEventListener("click", function () {
                 _this.updateDom();
             });
-            var domStack = [{ dom: root, scope: [] }];
+            var domStack = [{ dom: root, scope: [], binding: this.rootBinding }];
             while (domStack.length > 0) {
                 var current = domStack.pop();
                 var dom = current.dom;
                 var childScope = current.scope.slice(0);
                 if (!!dom.attributes && dom.attributes["data-model"]) {
-                    Array.prototype.push.apply(childScope, dom.attributes["data-model"].value.split("."));
+                    var modelExpression = dom.attributes["data-model"].value.split(".");
+                    if (modelExpression.indexOf("[]") >= 0) {
+                        var parent = this.parseBinding(current.scope, 0);
+                        parent.addChild("*", new TemplateBinding(dom, modelExpression));
+                        console.log(this.rootBinding);
+                        continue;
+                    }
+                    Array.prototype.push.apply(childScope, modelExpression);
                 }
                 this.performConventions(childScope, dom);
                 var i;
@@ -193,7 +251,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                 for (i = 0; i < dom.childNodes.length; i++) {
                     var child = dom.childNodes[i];
                     if (child.nodeType === 1) {
-                        domStack.push({ dom: child, scope: childScope });
+                        domStack.push({ dom: child, scope: childScope, binding: current.binding });
                     }
                     else if (child.nodeType === 3) {
                         this.compileTemplate(child.textContent, childScope, function (tpl) { return new DomText(child, tpl); });
@@ -280,10 +338,10 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             for (var i = offset; i < path.length; i++) {
                 bindingExpr = path[i];
                 if (bindingExpr == "[]") {
-                    child = new ArrayBinding(parent, path.slice(0, i));
+                    child = new ArrayBinding();
                 }
                 else
-                    child = new Binding(parent, this.createAccessor(bindingExpr));
+                    child = new Binding(this.createAccessor(bindingExpr));
                 parent.addChild(bindingExpr, child);
                 parent = child;
             }
