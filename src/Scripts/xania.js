@@ -176,8 +176,9 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
     exports.ArrayBinding = ArrayBinding;
     var TemplateBinding = (function (_super) {
         __extends(TemplateBinding, _super);
-        function TemplateBinding(dom, scope) {
+        function TemplateBinding(binder, dom, scope) {
             _super.call(this, new Function("m", "return m;"));
+            this.binder = binder;
             this.dom = dom;
             this.scope = scope;
             this.clones = [];
@@ -196,24 +197,17 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                 var keys = Object.keys(this.value);
                 var key;
                 var i;
-                for (i = this.clones.length; i < keys.length; i++) {
-                    key = keys[i];
+                for (i = this.children.length; i < keys.length; i++) {
                     var clone = document.importNode(this.dom, true);
                     clone.removeAttribute("data-model");
-                    var binder = new Binder();
-                    this.clones.push(binder);
-                    binder.bind(clone);
-                    binder.update([], this.value[key]);
+                    var childScope = this.scope.slice(0).concat([i.toString()]);
+                    this.binder.bind(clone, childScope, this);
                     parent.appendChild(clone);
                 }
-                for (i = 0; i < keys.length; i++) {
-                    key = keys[i];
-                    this.clones[i].update([], this.value[key]);
-                }
+                this.updateChildren();
+                return true;
             }
             return true;
-            //}
-            //return false;
         };
         return TemplateBinding;
     })(Binding);
@@ -225,24 +219,26 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             this.rootBinding = new Binding(function (m) { return m; });
             this.elements = [];
         }
-        Binder.prototype.bind = function (root) {
+        Binder.prototype.bind = function (root, scope, rootBinding) {
             var _this = this;
+            if (scope === void 0) { scope = []; }
+            if (rootBinding === void 0) { rootBinding = this.rootBinding; }
             root.addEventListener("click", function () {
                 _this.updateDom();
             });
-            var domStack = [{ dom: root, scope: [], binding: this.rootBinding }];
+            var domStack = [{ dom: root, scope: scope, binding: rootBinding }];
             while (domStack.length > 0) {
                 var current = domStack.pop();
                 var dom = current.dom;
                 var childScope = current.scope.slice(0);
                 if (!!dom.attributes && dom.attributes["data-model"]) {
                     var modelExpression = dom.attributes["data-model"].value.split(".");
+                    Array.prototype.push.apply(childScope, modelExpression);
                     if (modelExpression.indexOf("[]") >= 0) {
-                        var parent = this.parseBinding(current.scope, 0, this.rootBinding);
-                        parent.addChild("[]", new TemplateBinding(dom, modelExpression));
+                        var parent = this.parseBinding(current.scope, 0, rootBinding);
+                        parent.addChild("[]", new TemplateBinding(this, dom, childScope));
                         continue;
                     }
-                    Array.prototype.push.apply(childScope, modelExpression);
                 }
                 this.performConventions(childScope, dom);
                 var i;

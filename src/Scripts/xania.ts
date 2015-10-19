@@ -72,7 +72,7 @@ export class DomTest extends DomElement {
 }
 
 export class Binding {
-    private children = new Map<Binding>();
+    protected children = new Map<Binding>();
     public elements: DomElement[] = [];
     public value = null;
     public parent: Binding;
@@ -167,9 +167,9 @@ export class ArrayBinding extends Binding {
 
 export class TemplateBinding extends Binding {
 
-    private clones: Binder[] = [];
+    private clones: Binding[] = [];
 
-    constructor(public dom: HTMLElement, public scope: string[]) {
+    constructor(private binder: Binder, public dom: HTMLElement, public scope: string[]) {
         super(new Function("m", "return m;"));
     }
 
@@ -190,29 +190,20 @@ export class TemplateBinding extends Binding {
             var keys = Object.keys(this.value);
             var key: string;
             var i: number;
-            for (i = this.clones.length; i < keys.length; i++) {
-                key = keys[i];
+            for (i = this.children.length; i < keys.length; i++) {
                 var clone = <HTMLElement>document.importNode(this.dom, true);
                 clone.removeAttribute("data-model");
 
-                var binder = new Binder();
-                this.clones.push(binder);
-
-                binder.bind(clone);
-                binder.update([], this.value[key]);
-
+                var childScope = this.scope.slice(0).concat([i.toString()]);
+                this.binder.bind(clone, childScope, this);
                 parent.appendChild(clone);
             }
 
-            for (i = 0; i < keys.length; i++) {
-                key = keys[i];
-                this.clones[i].update([], this.value[key]);
-            }
+            this.updateChildren();
+            return true;
         }
 
         return true;
-        //}
-        //return false;
     }
 }
 export class Binder {
@@ -222,12 +213,12 @@ export class Binder {
     constructor(public templateEngine: engine.TemplateEngine = new engine.TemplateEngine()) {
     }
 
-    bind(root: HTMLElement) {
+    public bind(root: HTMLElement, scope: any[] = [], rootBinding: Binding = this.rootBinding) {
         root.addEventListener("click", () => {
             this.updateDom();
         });
 
-        var domStack = [{ dom: root, scope: [], binding: this.rootBinding }];
+        var domStack = [{ dom: root, scope: scope, binding: rootBinding }];
 
         while (domStack.length > 0) {
             var current = domStack.pop();
@@ -236,13 +227,12 @@ export class Binder {
 
             if (!!dom.attributes && dom.attributes["data-model"]) {
                 var modelExpression = dom.attributes["data-model"].value.split(".");
+                Array.prototype.push.apply(childScope, modelExpression);
                 if (modelExpression.indexOf("[]") >= 0) {
-                    var parent = this.parseBinding(current.scope, 0, this.rootBinding);
-                    parent.addChild("[]", new TemplateBinding(dom, modelExpression));
+                    var parent = this.parseBinding(current.scope, 0, rootBinding);
+                    parent.addChild("[]", new TemplateBinding(this, dom, childScope));
                     continue;
                 }
-
-                Array.prototype.push.apply(childScope, modelExpression);
             }
 
             this.performConventions(childScope, dom);
