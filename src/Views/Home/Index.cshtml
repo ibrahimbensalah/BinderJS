@@ -1,6 +1,6 @@
 ﻿@{
     Layout = null;
-    const int days = 1;
+    const int days = 31;
     const int hours = 1;
 }
 
@@ -10,14 +10,14 @@
     <title>Xania Binding Lab</title>
     <link href="~/Content/calendar.css" rel="stylesheet" />
     <script>
-        var model = null;
-        var binder = null;
+        window.model = null;
+        window.binder = null;
 
         function step() {
             for (var d = 0; d < @days  ; d++) {
-                for (var h = 0; h < @hours ; h++) {
-                    model.setCell(h, d, Math.random());
-                    binder.update([d, "[]"], model[d][h]);
+                for (var h = 0; h < @hours; h++) {
+                    window.model.setCell(h, d, Math.random());
+                    window.binder.update([d, "[]"], model[d][h]);
                 }
             }
         }
@@ -34,27 +34,33 @@
 
         function startChainRequests() {
             var pairs = [];
-            for (var d = 0; d < @days  ; d++) {
+            for (var d = 0; d < @days; d++) {
                 for (var h = 0; h < @hours ; h++) {
                     pairs.push({ "d": d, "h": h });
                 }
             }
-            var step = function(i) {
-                binder.updateDom();
-
+            var step = function() {
+                var i = Math.floor(Math.random() * pairs.length);
                 var p = pairs[i];
-                model.setCell(p.h, p.d, Math.random());
+                window.model.setCell(p.h, p.d, Math.random());
 
-                binder.update([p.h, "[]", "style"], model[p.h][p.d].style);
-                binder.update([p.h, "[]", "status"], model[p.h][p.d].status);
-                binder.update([p.h, "[]"], model[p.h]);
-                binder.update([p.h, "[]", p.d], model[p.h][p.d]);
-                binder.update([p.h, "[]", p.d, "style"], model[p.h][p.d].style);
-                binder.update([p.h, "[]", p.d, "status"], model[p.h][p.d].status);
+                window.binder.update([p.h, "[]"], model[p.h]);
+//                binder.update([p.h, "[]", p.d, "style"], model[p.h][p.d].style);
+                window.binder.update([p.h, "[]", p.d, "status"], model[p.h][p.d].status);
 
+                window.binder.updateDom();
+                // window.requestAnimationFrame(binder.updateDom.bind(binder));
                 // window.requestAnimationFrame(step.bind(this, ++i % pairs.length));
+                setTimeout(step.bind(this), 10);
             }
-            step(0);
+            step();
+            //var i = 0;
+            //setInterval(function() {
+            //    step(++i % pairs.length);
+            //}, 0);
+            //for(var i=0 ;i<pairs.length ; i++) {
+            //    step(i);
+            //}
 
         }
 

@@ -14,6 +14,7 @@ define(["require", "exports", "xania"], function (require, exports, Xania) {
                 this[day][hour] = new Cell(day, hour);
             var cell = this[day][hour];
             cell.setResults(results);
+            this[day].length = Object.keys(this[day]).length;
             return cell;
         };
         Calendar.prototype.getCell = function (day, hour, results) {

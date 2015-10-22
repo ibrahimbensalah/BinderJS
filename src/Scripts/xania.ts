@@ -1,7 +1,7 @@
 ﻿import engine = require("templateEngine");
 
 export class DomElement {
-    _isdirty: boolean = false;
+    isDirty: boolean = false;
 
     constructor(public dom: any, public template: any, public bindings: Binding[]) {
         this.init();
@@ -19,15 +19,6 @@ export class DomElement {
     }
 
     update() {
-    }
-
-    set isDirty(value: boolean) {
-        this.update();
-        this._isdirty = value;
-    }
-
-    get isDirty(): boolean {
-        return this._isdirty;
     }
 }
 
@@ -168,27 +159,25 @@ export class ArrayBinding extends Binding {
 export class TemplateBinding extends Binding {
 
     private clones: Binding[] = [];
+    private parentDom: HTMLElement;
+    private length: number;
 
     constructor(private binder: Binder, public dom: HTMLElement, public scope: string[]) {
         super(new Function("m", "return m;"));
-    }
 
-    getChild(key: string): Binding {
-        var clone = this.clones[key];
-        if (!!clone)
-            return clone.rootBinding;
-        return null;
+        this.parentDom = dom.parentElement;
+        dom.remove();
     }
 
     update(model: any): boolean {
-        // if (this.value !== model) {
-        this.value = model;
+        var length = model && model.length;
+        if (!super.update(model) && this.length === length)
+            return false;
 
-        if (!!this.value && !!this.dom.parentElement) {
-            var parent = this.dom.parentElement;
+        this.length = length;
 
-            var keys = Object.keys(this.value);
-            var key: string;
+        if (!!model) {
+            var keys = Object.keys(model);
             var i: number;
             for (i = this.children.length; i < keys.length; i++) {
                 var clone = <HTMLElement>document.importNode(this.dom, true);
@@ -196,14 +185,16 @@ export class TemplateBinding extends Binding {
 
                 var childScope = this.scope.slice(0).concat([i.toString()]);
                 this.binder.bind(clone, childScope, this);
-                parent.appendChild(clone);
+                this.parentDom.appendChild(clone);
             }
-
-            this.updateChildren();
-            return true;
         }
-
         return true;
+    }
+
+    dispatch() {
+        if (this.parent != null) {
+            this.parent.dispatch();
+        }
     }
 }
 export class Binder {
@@ -370,7 +361,7 @@ export class Map<T> {
 
     add(key: string, child: T) {
         this.items[key] = child;
-        this.keys.push(key);
+        this.keys = Object.keys(this.items);
     }
 
     get(key: string): T {

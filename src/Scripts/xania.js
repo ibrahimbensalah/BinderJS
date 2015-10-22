@@ -10,7 +10,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             this.dom = dom;
             this.template = template;
             this.bindings = bindings;
-            this._isdirty = false;
+            this.isDirty = false;
             this.init();
         }
         DomElement.prototype.init = function () {
@@ -24,17 +24,6 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         };
         DomElement.prototype.update = function () {
         };
-        Object.defineProperty(DomElement.prototype, "isDirty", {
-            get: function () {
-                return this._isdirty;
-            },
-            set: function (value) {
-                this.update();
-                this._isdirty = value;
-            },
-            enumerable: true,
-            configurable: true
-        });
         return DomElement;
     })();
     exports.DomElement = DomElement;
@@ -182,32 +171,31 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             this.dom = dom;
             this.scope = scope;
             this.clones = [];
+            this.parentDom = dom.parentElement;
+            dom.remove();
         }
-        TemplateBinding.prototype.getChild = function (key) {
-            var clone = this.clones[key];
-            if (!!clone)
-                return clone.rootBinding;
-            return null;
-        };
         TemplateBinding.prototype.update = function (model) {
-            // if (this.value !== model) {
-            this.value = model;
-            if (!!this.value && !!this.dom.parentElement) {
-                var parent = this.dom.parentElement;
-                var keys = Object.keys(this.value);
-                var key;
+            var length = model && model.length;
+            if (!_super.prototype.update.call(this, model) && this.length === length)
+                return false;
+            this.length = length;
+            if (!!model) {
+                var keys = Object.keys(model);
                 var i;
                 for (i = this.children.length; i < keys.length; i++) {
                     var clone = document.importNode(this.dom, true);
                     clone.removeAttribute("data-model");
                     var childScope = this.scope.slice(0).concat([i.toString()]);
                     this.binder.bind(clone, childScope, this);
-                    parent.appendChild(clone);
+                    this.parentDom.appendChild(clone);
                 }
-                this.updateChildren();
-                return true;
             }
             return true;
+        };
+        TemplateBinding.prototype.dispatch = function () {
+            if (this.parent != null) {
+                this.parent.dispatch();
+            }
         };
         return TemplateBinding;
     })(Binding);
@@ -368,7 +356,7 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         }
         Map.prototype.add = function (key, child) {
             this.items[key] = child;
-            this.keys.push(key);
+            this.keys = Object.keys(this.items);
         };
         Map.prototype.get = function (key) {
             return this.items[key];
