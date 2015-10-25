@@ -118,49 +118,49 @@ export class Binding {
     }
 }
 
-export class ArrayBinding extends Binding {
-    template: Binding;
+//export class ArrayBinding extends Binding {
+//    template: Binding;
 
-    constructor() {
-        super(new Function("m", "return m;"));
+//    constructor() {
+//        super(new Function("m", "return m;"));
 
-        this.template = new Binding(new Function("m", "return m[0];"));
-    }
+//        this.template = new Binding(new Function("m", "return m[0];"));
+//    }
 
-    addChild(key: string, binding: Binding) {
-        this.template.addChild(key, binding);
-    }
+//    addChild(key: string, binding: Binding) {
+//        this.template.addChild(key, binding);
+//    }
 
-    getChild(key: string) {
-        return this.template.getChild(key);
-    }
+//    getChild(key: string) {
+//        return this.template.getChild(key);
+//    }
 
-    update(model: any): boolean {
-        if (this.value !== model) {
-            this.value = model;
-            this.updateChild(this.template);
-            return true;
-        }
-        return false;
-    }
+//    update(model: any): boolean {
+//        if (this.value !== model) {
+//            this.value = model;
+//            this.updateChild(this.template);
+//            return true;
+//        }
+//        return false;
+//    }
 
-    updateChildren() {
-        this.template.updateChildren();
-    }
+//    updateChildren() {
+//        this.template.updateChildren();
+//    }
 
-    dispatch() {
-        if (this.parent != null) {
-            this.parent.dispatch();
-        }
-    }
+//    dispatch() {
+//        if (this.parent != null) {
+//            this.parent.dispatch();
+//        }
+//    }
 
-}
+//}
 
 export class TemplateBinding extends Binding {
 
     private clones: Binding[] = [];
     private parentDom: HTMLElement;
-    private length: number;
+    private keys: string[] = [];
 
     constructor(private binder: Binder, public dom: HTMLElement, public scope: string[]) {
         super(new Function("m", "return m;"));
@@ -170,14 +170,14 @@ export class TemplateBinding extends Binding {
     }
 
     update(model: any): boolean {
+        var keys = !!model ? Object.keys(model) : [];
         var length = model && model.length;
-        if (!super.update(model) && this.length === length)
+        if (!super.update(model) && this.keys.length === keys.length)
             return false;
 
-        this.length = length;
+        this.keys = keys;
 
         if (!!model) {
-            var keys = Object.keys(model);
             var i: number;
             for (i = this.children.length; i < keys.length; i++) {
                 var clone = <HTMLElement>document.importNode(this.dom, true);
@@ -186,6 +186,9 @@ export class TemplateBinding extends Binding {
                 var childScope = this.scope.slice(0).concat([i.toString()]);
                 this.binder.bind(clone, childScope, this);
                 this.parentDom.appendChild(clone);
+
+                var child = this.children.elementAt(i);
+                this.updateChild(child);
             }
         }
         return true;
@@ -333,10 +336,10 @@ export class Binder {
         var child;
         for (var i = offset; i < path.length; i++) {
             bindingExpr = path[i];
-            if (bindingExpr == "[]") {
-                child = new ArrayBinding();
-            }
-            else
+            //if (bindingExpr == "[]") {
+            //    child = new ArrayBinding();
+            //}
+            //else
                 child = new Binding(this.createAccessor(bindingExpr));
 
             parent.addChild(bindingExpr, child);

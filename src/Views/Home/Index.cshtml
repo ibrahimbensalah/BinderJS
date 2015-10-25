@@ -13,82 +13,40 @@
         window.model = null;
         window.binder = null;
 
-        function step() {
-            for (var d = 0; d < @days  ; d++) {
-                for (var h = 0; h < @hours; h++) {
-                    window.model.setCell(h, d, Math.random());
-                    window.binder.update([d, "[]"], model[d][h]);
-                }
+        var pairs = [];
+        for (var h = 0; h < @hours ; h++) {
+            for (var d = 0; d < @days; d++) {
+                pairs.push({ "d": d, "h": h });
             }
+        }
+        
+        var step = function(i) {
+            var p = pairs[i];
+            window.model.setCell(p.h, p.d, Math.random());
+
+            window.binder.update([p.h, "[]", p.d, "status"], model[p.h][p.d].status);
         }
 
         function startAnimation() {
-            step();
-            window.requestAnimationFrame(binder.updateDom.bind(binder));
-            setTimeout(startAnimation, 0);
+            step(Math.floor(Math.random() * pairs.length));
+            binder.updateDom();
+            // setTimeout(startAnimation.bind(this), 0);
+            window.requestAnimationFrame(startAnimation);
         }
 
-        function startInterval() {
-            setInterval(step, 0);
-        }
-
-        function startChainRequests() {
-            var pairs = [];
-            for (var d = 0; d < @days; d++) {
-                for (var h = 0; h < @hours ; h++) {
-                    pairs.push({ "d": d, "h": h });
-                }
-            }
-            var step = function() {
-                var i = Math.floor(Math.random() * pairs.length);
-                var p = pairs[i];
-                window.model.setCell(p.h, p.d, Math.random());
-
-                window.binder.update([p.h, "[]"], model[p.h]);
-//                binder.update([p.h, "[]", p.d, "style"], model[p.h][p.d].style);
-                window.binder.update([p.h, "[]", p.d, "status"], model[p.h][p.d].status);
-
-                window.binder.updateDom();
-                // window.requestAnimationFrame(binder.updateDom.bind(binder));
-                // window.requestAnimationFrame(step.bind(this, ++i % pairs.length));
-                setTimeout(step.bind(this), 10);
-            }
-            step();
-            //var i = 0;
-            //setInterval(function() {
-            //    step(++i % pairs.length);
-            //}, 0);
-            //for(var i=0 ;i<pairs.length ; i++) {
-            //    step(i);
-            //}
-
-        }
-
-        var measures = [];
         function loadAll() {
-            var start = new Date().getTime();
-            step();
-            var end = new Date().getTime();
-
-            measures.push(end - start);
-
-            if (measures.length > 5)
-                measures.splice(0, 0);
-
-            var total = 0;
-            for (var i in measures) {
-                total += measures[i];
-            }
-
-            console.log("average elapsedTime ", total / measures.length);
+            window.requestAnimationFrame(function() {
+                for (var i = 0; i < pairs.length; i++) {
+                    step(i);
+                }
+                binder.updateDom();
+            });
         }
     </script>
 </head>
 <body>
     <button onclick="loadAll();">load all</button>
     <button onclick="startAnimation();">start animation</button>
-    <button onclick="startInterval();">start interval</button>
-    <button onclick="startChainRequests();">start chain</button>
 
     <div id="calendar"></div>
 
@@ -115,6 +73,13 @@
             host.appendChild(table);
 
             binder.update([], model);
+
+            for (var h = 0; h < @hours ; h++) {
+                for (var d = 0; d < @days; d++) {
+                    model.setCell(h, d, Math.random());
+                }
+                window.binder.update([h, "[]"], window.model[h]);
+            }
         });
     </script>
 

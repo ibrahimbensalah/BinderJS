@@ -132,37 +132,35 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
         return Binding;
     })();
     exports.Binding = Binding;
-    var ArrayBinding = (function (_super) {
-        __extends(ArrayBinding, _super);
-        function ArrayBinding() {
-            _super.call(this, new Function("m", "return m;"));
-            this.template = new Binding(new Function("m", "return m[0];"));
-        }
-        ArrayBinding.prototype.addChild = function (key, binding) {
-            this.template.addChild(key, binding);
-        };
-        ArrayBinding.prototype.getChild = function (key) {
-            return this.template.getChild(key);
-        };
-        ArrayBinding.prototype.update = function (model) {
-            if (this.value !== model) {
-                this.value = model;
-                this.updateChild(this.template);
-                return true;
-            }
-            return false;
-        };
-        ArrayBinding.prototype.updateChildren = function () {
-            this.template.updateChildren();
-        };
-        ArrayBinding.prototype.dispatch = function () {
-            if (this.parent != null) {
-                this.parent.dispatch();
-            }
-        };
-        return ArrayBinding;
-    })(Binding);
-    exports.ArrayBinding = ArrayBinding;
+    //export class ArrayBinding extends Binding {
+    //    template: Binding;
+    //    constructor() {
+    //        super(new Function("m", "return m;"));
+    //        this.template = new Binding(new Function("m", "return m[0];"));
+    //    }
+    //    addChild(key: string, binding: Binding) {
+    //        this.template.addChild(key, binding);
+    //    }
+    //    getChild(key: string) {
+    //        return this.template.getChild(key);
+    //    }
+    //    update(model: any): boolean {
+    //        if (this.value !== model) {
+    //            this.value = model;
+    //            this.updateChild(this.template);
+    //            return true;
+    //        }
+    //        return false;
+    //    }
+    //    updateChildren() {
+    //        this.template.updateChildren();
+    //    }
+    //    dispatch() {
+    //        if (this.parent != null) {
+    //            this.parent.dispatch();
+    //        }
+    //    }
+    //}
     var TemplateBinding = (function (_super) {
         __extends(TemplateBinding, _super);
         function TemplateBinding(binder, dom, scope) {
@@ -171,16 +169,17 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             this.dom = dom;
             this.scope = scope;
             this.clones = [];
+            this.keys = [];
             this.parentDom = dom.parentElement;
             dom.remove();
         }
         TemplateBinding.prototype.update = function (model) {
+            var keys = !!model ? Object.keys(model) : [];
             var length = model && model.length;
-            if (!_super.prototype.update.call(this, model) && this.length === length)
+            if (!_super.prototype.update.call(this, model) && this.keys.length === keys.length)
                 return false;
-            this.length = length;
+            this.keys = keys;
             if (!!model) {
-                var keys = Object.keys(model);
                 var i;
                 for (i = this.children.length; i < keys.length; i++) {
                     var clone = document.importNode(this.dom, true);
@@ -188,6 +187,8 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
                     var childScope = this.scope.slice(0).concat([i.toString()]);
                     this.binder.bind(clone, childScope, this);
                     this.parentDom.appendChild(clone);
+                    var child = this.children.elementAt(i);
+                    this.updateChild(child);
                 }
             }
             return true;
@@ -329,11 +330,11 @@ define(["require", "exports", "templateEngine"], function (require, exports, eng
             var child;
             for (var i = offset; i < path.length; i++) {
                 bindingExpr = path[i];
-                if (bindingExpr == "[]") {
-                    child = new ArrayBinding();
-                }
-                else
-                    child = new Binding(this.createAccessor(bindingExpr));
+                //if (bindingExpr == "[]") {
+                //    child = new ArrayBinding();
+                //}
+                //else
+                child = new Binding(this.createAccessor(bindingExpr));
                 parent.addChild(bindingExpr, child);
                 parent = child;
             }

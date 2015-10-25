@@ -18,8 +18,6 @@ export class Calendar {
         var cell = this[day][hour];
         cell.setResults(results);
 
-        this[day].length = Object.keys(this[day]).length;
-
         return cell;
     }
 
