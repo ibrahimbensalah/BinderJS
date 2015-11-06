@@ -24,7 +24,6 @@ namespace Sandbox.DataFlow.tests
                     new Person { Age = 55 }
                 }
             };
-
         }
 
         [Test]
@@ -106,6 +105,21 @@ namespace Sandbox.DataFlow.tests
             person1.Age.Should().Be(123);
             person2.Age.Should().Be(123);
         }
+
+        [Test]
+        public void OrganisationAgeTest()
+        {
+            var organisation = new Organisation
+            {
+                Persons = {new Person() {Age = 1}, new Person() {Age = 2}}
+            };
+
+            var memberStep = Step.Member((Organisation o) => o.Persons);
+            var foreachStep = Step.ForEach<Person, int>(new PersonAgeStep());
+            var agesStep = Step.ComposeStep(memberStep, foreachStep);
+
+            agesStep.Execute(organisation).ShouldBeEquivalentTo(new []{1, 2});
+        }
     }
 
     public class ForEachStep<TModel> : IStep<IEnumerable<TModel>>
@@ -140,6 +154,14 @@ namespace Sandbox.DataFlow.tests
         }
     }
 
+    public class PersonAgeStep : Step<Person, int>
+    {
+        public override int Execute(Person model)
+        {
+            return model.Age;
+        }
+    }
+
     public class PersonStep : Step<Person>
     {
         private readonly int _age;
@@ -160,12 +182,17 @@ namespace Sandbox.DataFlow.tests
         public abstract void Execute(TModel model);
     }
 
-    public abstract class Step<TModel, TResult> : IStep<TModel, TResult>
+    public abstract class Step<TModel, TResult> : IStep<TModel, TResult>, IStep<TModel>
     {
         public abstract TResult Execute(TModel model);
+
+        void IStep<TModel>.Execute(TModel model)
+        {
+            Execute(model);
+        }
     }
 
-    public class SequenceStep<TModel>: IEnumerable<IStep<TModel>>, IStep<TModel>
+    public class SequenceStep<TModel>: Step<TModel>, IEnumerable<IStep<TModel>>
     {
         private readonly IList<IStep<TModel>> _childSteps;
 
@@ -189,7 +216,7 @@ namespace Sandbox.DataFlow.tests
             return GetEnumerator();
         }
 
-        public void Execute(TModel model)
+        public override void Execute(TModel model)
         {
             foreach (var step in _childSteps)
             {
