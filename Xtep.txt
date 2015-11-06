@@ -1,0 +1,398 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Linq.Expressions;
+using FluentAssertions;
+using NUnit.Framework;
+
+namespace Sandbox.DataFlow.tests
+{
+    public class DataFlowTests
+    {
+        private Organisation _organisation;
+
+        [SetUp]
+        public void Setup()
+        {
+            _organisation = new Organisation
+            {
+                Persons =
+                {
+                    new Person { Age = 60 },
+                    new Person { Age = 50 },
+                    new Person { Age = 55 }
+                }
+            };
+
+        }
+
+        [Test]
+        public void ConstantTest()
+        {
+            // arrange
+            var constant = Step.Constant(123);
+
+            // act & verify
+            constant.Calculate().Should().Be(123);
+        }
+
+        [Test]
+        public void LazyDataTest()
+        {
+            // arrange
+            var lazy = new LazyStep<int>(() => 3456);
+
+            // act & verify
+            lazy.Calculate().Should().Be(3456);
+        }
+
+        [Test]
+        public void SumTest()
+        {
+            // arrange
+            var step = new AggregateStep<int>(g => g.Sum());
+
+            // act & verify
+            step.Execute(1, 2, 3).Should().Be(6);
+        }
+
+        [Test]
+        public void AssignStepTest()
+        {
+            // arrange
+            var step = Step.Assign((Person e) => e.Age, 33);
+
+            // act
+            step.Execute(_organisation.Persons.First());
+
+            // verify
+            _organisation.Persons.First().Age.Should().Be(33);
+        }
+
+        [Test]
+        public void HierarchicalStepTest()
+        {
+            var memberStep = Step.Member((Organisation c) => c.Persons);
+            var forEachStep = Step.ForEach(new PersonStep(123));
+
+            var composeStep = Step.ComposeStep(memberStep, forEachStep);
+
+            composeStep.Execute(_organisation);
+
+            _organisation.Persons.Select(e => e.Age).Distinct().ShouldBeEquivalentTo(new []{123});
+        }
+
+        [Test]
+        public void SequenceStepTest()
+        {
+            var sequence = Step.Sequence(new PersonStep(1), new PersonStep(2));
+            
+            var person = new Person();
+            sequence.Execute(person);
+
+            person.Age.Should().Be(2);
+        }
+
+        [Test]
+        public void ForEachStepTest()
+        {
+            var forEach = Step.ForEach(new PersonStep(123));
+
+            var person1 = new Person();
+            var person2 = new Person();
+            forEach.Execute(new[] {person1, person2});
+
+            person1.Age.Should().Be(123);
+            person2.Age.Should().Be(123);
+        }
+    }
+
+    public class ForEachStep<TModel> : IStep<IEnumerable<TModel>>
+    {
+        private readonly IStep<TModel> _step;
+
+        public ForEachStep(IStep<TModel> step)
+        {
+            _step = step;
+        }
+
+        public void Execute(IEnumerable<TModel> models)
+        {
+            foreach (var item in models)
+                _step.Execute(item);
+        }
+    }
+
+    public class ForEachStep<TModel, TResult> : IStep<IEnumerable<TModel>, IEnumerable<TResult>>
+    {
+        private readonly IStep<TModel, TResult> _step;
+
+        public ForEachStep(IStep<TModel, TResult> step)
+        {
+            _step = step;
+        }
+
+        public IEnumerable<TResult> Execute(IEnumerable<TModel> models)
+        {
+            foreach (var item in models)
+                yield return _step.Execute(item);
+        }
+    }
+
+    public class PersonStep : Step<Person>
+    {
+        private readonly int _age;
+
+        public PersonStep(int age)
+        {
+            _age = age;
+        }
+
+        public override void Execute(Person model)
+        {
+            model.Age = _age;
+        }
+    }
+
+    public abstract class Step<TModel> : IStep<TModel>
+    {
+        public abstract void Execute(TModel model);
+    }
+
+    public abstract class Step<TModel, TResult> : IStep<TModel, TResult>
+    {
+        public abstract TResult Execute(TModel model);
+    }
+
+    public class SequenceStep<TModel>: IEnumerable<IStep<TModel>>, IStep<TModel>
+    {
+        private readonly IList<IStep<TModel>> _childSteps;
+
+        public SequenceStep()
+        {
+            _childSteps = new List<IStep<TModel>>();
+        }
+
+        public void Add(IStep<TModel> step)
+        {
+            _childSteps.Add(step);
+        }
+
+        public IEnumerator<IStep<TModel>> GetEnumerator()
+        {
+            return _childSteps.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+
+        public void Execute(TModel model)
+        {
+            foreach (var step in _childSteps)
+            {
+                step.Execute(model);
+            }
+        }
+    }
+
+    public class MemberStep<TContainer, TMember>: IStep<TContainer, TMember>
+    {
+        private readonly Func<TContainer, TMember> _selectorFunc;
+
+        public MemberStep(Func<TContainer, TMember> selectorFunc)
+        {
+            _selectorFunc = selectorFunc;
+        }
+
+        public TMember Execute(TContainer model)
+        {
+            return _selectorFunc(model);
+        }
+    }
+
+    public interface IStep<in TModel, out TValue>
+    {
+        TValue Execute(TModel model);
+    }
+
+    public interface IStep<in TModel>
+    {
+        void Execute(TModel model);
+    }
+
+    public class AssignStep<TModel, TValue>
+    {
+        private readonly Expression<Func<TModel, TValue>> _propertyExpr;
+        private readonly TValue _value;
+
+        public AssignStep(Expression<Func<TModel, TValue>> propertyExpr, TValue value)
+        {
+            _propertyExpr = propertyExpr;
+            _value = value;
+        }
+
+        public void Execute(TModel model)
+        {
+            var assignExpr = Expression.Assign(_propertyExpr.Body, Expression.Constant(_value));
+            var assignFunc = Expression.Lambda<Action<TModel>>(assignExpr, _propertyExpr.Parameters[0]).Compile();
+            assignFunc(model);
+        }
+    }
+
+    public class Organisation
+    {
+        public Organisation()
+        {
+            Persons = new List<Person>();
+        }
+
+        public ICollection<Person> Persons { get; private set; }
+    }
+
+    public class Person
+    {
+        public int Age { get; set; }
+    }
+
+    public class ConstantStep<TValue>
+    {
+        private readonly TValue _value;
+
+        public ConstantStep(TValue value)
+        {
+            _value = value;
+        }
+
+        public TValue Calculate()
+        {
+            return _value;
+        }
+    }
+
+    public class LazyStep<TValue>
+    {
+        private readonly Func<TValue> _valueFunc;
+
+        public LazyStep(Func<TValue> valueFunc)
+        {
+            _valueFunc = valueFunc;
+        }
+
+        public TValue Calculate()
+        {
+            return _valueFunc();
+        }
+    }
+
+    public class AggregateStep<TValue>: IStep<IEnumerable<TValue>, TValue>
+    {
+        private readonly Func<IEnumerable<TValue>, TValue> _aggregateFunc;
+
+        public AggregateStep(Func<IEnumerable<TValue>, TValue> aggregateFunc)
+        {
+            _aggregateFunc = aggregateFunc;
+        }
+
+        public TValue Execute(params TValue[] values)
+        {
+            return _aggregateFunc(values);
+        }
+
+        public TValue Execute(IEnumerable<TValue> model)
+        {
+            return _aggregateFunc(model);
+        }
+    }
+
+    public class ComposeStep<TModel, TSubResult, TResult> : IStep<TModel, TResult>
+    {
+        private readonly IStep<TModel, TSubResult> _step1;
+        private readonly IStep<TSubResult, TResult> _step2;
+
+        public ComposeStep(IStep<TModel, TSubResult> step1, IStep<TSubResult, TResult> step2)
+        {
+            _step1 = step1;
+            _step2 = step2;
+        }
+
+        public TResult Execute(TModel model)
+        {
+            return _step2.Execute(_step1.Execute(model));
+        }
+    }
+
+    public class ComposeStep<TModel, TResult> : IStep<TModel>
+    {
+        private readonly IStep<TModel, TResult> _step1;
+        private readonly IStep<TResult> _step2;
+
+        public ComposeStep(IStep<TModel, TResult> step1, IStep<TResult> step2)
+        {
+            _step1 = step1;
+            _step2 = step2;
+        }
+
+        public void Execute(TModel model)
+        {
+            _step2.Execute(_step1.Execute(model));
+        }
+    }
+
+    public class Step
+    {
+        public static MemberStep<TContainer, TModel> Member<TContainer, TModel>(Func<TContainer, TModel> modelSelector)
+        {
+            return new MemberStep<TContainer, TModel>(modelSelector);
+        }
+
+        public static AggregateStep<TValue> Aggregate<TValue>(Func<IEnumerable<TValue>, TValue> func)
+        {
+            return new AggregateStep<TValue>(func);
+        }
+
+        public static AssignStep<TModel, TValue> Assign<TModel, TValue>(Expression<Func<TModel, TValue>> propertyExpression, TValue value)
+        {
+            return new AssignStep<TModel, TValue>(propertyExpression, value);
+        }
+
+        public static ConstantStep<TValue> Constant<TValue>(TValue value)
+        {
+            return new ConstantStep<TValue>(value);
+        }
+
+        public static ForEachStep<TModel> ForEach<TModel>(IStep<TModel> step)
+        {
+            return new ForEachStep<TModel>(step);
+        }
+
+        public static ForEachStep<TModel, TResult> ForEach<TModel, TResult>(IStep<TModel, TResult> step)
+        {
+            return new ForEachStep<TModel, TResult>(step);
+        }
+
+        public static SequenceStep<TModel> Sequence<TModel>(params IStep<TModel>[] steps)
+        {
+            var sequence = new SequenceStep<TModel>();
+
+            foreach(var step in steps)
+                sequence.Add(step);
+
+            return sequence;
+        }
+
+        public static ComposeStep<TModel, TSubResult, TResult> ComposeStep<TModel, TSubResult, TResult>(
+            IStep<TModel, TSubResult> step1, IStep<TSubResult, TResult> step2)
+        {
+            return new ComposeStep<TModel, TSubResult, TResult>(step1, step2);
+        }
+
+        public static ComposeStep<TModel, TResult> ComposeStep<TModel, TResult>(
+            IStep<TModel, TResult> step1, IStep<TResult> step2)
+        {
+            return new ComposeStep<TModel, TResult>(step1, step2);
+        }
+    }
+}
